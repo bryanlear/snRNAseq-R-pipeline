@@ -1,2 +1,6 @@
 brain_data
 *.tsv
+*.rds
+*.pkl
+logs/
+.snakemake/

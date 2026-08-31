@@ -1,9 +1,6 @@
 args <- commandArgs(trailingOnly = TRUE)
 
-if (length(args) != 4L){stop(paste(
-      "Usage: Rscript scripts/01_create_seurat.R",
-      "<sample_id> <condition> <input.h5> <output.rds>"),
-    call. = FALSE)}
+if (length(args) != 4L){stop("Usage: Rscript scripts/01_create_seurat.R", "<sample_id> <condition> <input.h5> <output.rds>", call. = FALSE)}
 
 sample_id <- args[[1]]
 condition <- args[[2]]
