@@ -13,3 +13,28 @@ Rscript scripts/01_create_seurat.R \
   [file.h5] \
   results/01_seurat/output_files.rds
 ```
+
+2. **TEST: QC (UMIs and Gene count using MADs)**
+
+```
+log_values <- log10(values)
+center <- median(log_values)
+spread <- mad(log_values)
+
+and then:
+
+lower <- 10^(center - 3 * spread)
+upper <- 10^(center + 3 * spread)
+
+and it is applied separately to:
+
+nCount_RNA and nFeature_RNA
+```
+
+```
+Rscript scripts/02_qc.R \
+  results/01_seurat/output_files.rds \
+  results/02_qc/output_files.rds \
+  results/02_qc/output_files.thresholds.tsv \
+  3 
+```
