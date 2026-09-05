@@ -1,0 +1,1464 @@
+---
+title: "rnaseq"
+author: "Bryan Lee"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# PROJECT - SINGLE NUCLEUS DATA ANALYSIS
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+###### FOR PACKAGES NOT IN CRAN #######
+
+#######################################
+### INSTALL FROM GITHUB REPOSITORY: ###
+#######################################
+
+#install.packages("remotes")
+#remotes::install_github(
+#  "chris-mcginnis-ucsf/DoubletFinder",
+#  force = TRUE
+#)
+
+#######################################
+###### INSTALL FROM BIOCMANAGER: ######
+#######################################
+
+#install.packages("BiocManager")
+#BiocManager::install("slingshot")
+#BiocManager::install("MAST")
+#BiocManager::install(c(
+#  "clusterProfiler",
+#  "fgsea"
+#))
+
+########################################
+
+library(hdf5r)
+library(Seurat)
+library(sctransform)
+library(Rcpp)
+library(harmony)
+library(DoubletFinder)
+library(ggplot2)
+library(Azimuth)
+library(MAST)
+library(slingshot)
+library(CellChat)
+library(clusterProfiler)
+library(fgsea)
+library(dplyr)
+library(decontX)
+library(Matrix)
+library(celda)
+library(BPCells)
+library(openxlsx)
+library(HGNChelper)
+library(shiny)
+```
+
+# BRAIN snRNA-seq DATA
+
+## TREATED & CONTROL
+
+### Load & Assign:
+
+```{r LOAD-BRAIN-DATA}
+
+###################################
+######### CONTROL - QC ############
+###################################
+
+### BEFORE starting, I placed all the files in their own labeled directories and these were subsequently placed in the R projects directory.
+
+###################################
+
+## I used this to first test the data structure and content of file
+#control_74T <-- Read10X_h5("./brain_data/control/74T.h5", use.names=TRUE)
+#dim(control_74T)
+#35437 (genes(FEATURES) by 8214 (barcodes)
+
+######################################
+######################################
+
+brain_files <- c(
+  "74T"   = "./brain_data/control/74T.h5",
+  "77T"   = "./brain_data/control/77T.h5",
+  "81T"   = "./brain_data/control/81T.h5",
+  "83T"   = "./brain_data/control/83T.h5",
+  "47010" = "./brain_data/treated/47010.h5",
+  "47051" = "./brain_data/treated/47051.h5",
+  "47110" = "./brain_data/treated/47110.h5",
+  "47394" = "./brain_data/treated/47394.h5")
+
+brain_conditions <- c(
+  "74T"   = "control",
+  "77T"   = "control",
+  "81T"   = "control",
+  "83T"   = "control",
+  "47010" = "treated",
+  "47051" = "treated",
+  "47110" = "treated",
+  "47394" = "treated")
+
+```
+
+### Load Matrices & Convert to Seurat Object:
+
+```{r}
+brain <- lapply(names(brain_files), function(sample_id){
+ counts <- Read10X_h5(brain_files[[sample_id]], use.names=TRUE) 
+ object <- CreateSeuratObject(counts=counts, project=sample_id, min.cells=0, min.features=0)
+ object$sample_id <- sample_id
+ object$condition <- brain_conditions[[sample_id]]
+ return(object)})
+
+#names(brain) = names(brain_files)
+
+#sapply(brain, dim)
+#74T   77T   81T   83T 47010 47051 47110 47394
+#[1,] 35437 35437 35437 35437 35441 35441 35441 35441
+#[2,]  8214  6689  6845  7116  6149  5454  4267  5513
+
+#nCount_RNA = UMI count/cell
+#nFeature_RNA = Gene count/cell (genes=features)
+```
+
+**Example** output of calculated UMI count (`nCount_RNA`) and gene count (`nFeature_RNA`):
+
+```         
+              orig.ident nCount_RNA nFeature_RNA sample_id condition
+AAACCCAAGGCATCGA-1        74T       8492         3002       74T   control
+AAACCCAAGGCTGAAC-1        74T       4989         2289       74T   control
+AAACCCAAGGGAGTTC-1        74T      37446         6290       74T   control
+AAACCCACAAGCACCC-1        74T       2954         1477       74T   control
+```
+
+------------------------------------------------------------------------
+
+***UMIs and Gene Counts Thresholds Rationale***
+
+Sources: [1](https://www.pythiabio.com/post/scrna-seq-analysis-faqs-and-tips-to-avoid-common-pitfalls-part-1-quality-control), [2](https://pmc.ncbi.nlm.nih.gov/articles/PMC6431044/)
+
+- Droplet-based technology carries a lot of noise. Therefore, setting thresholds for UMI and gene counts is needed to filter out empty droplets, doublets, and multiplets (which can show very high counts).
+- **Ambient RNA** - 'Extraneous RNA molecules not originating from the cells of interest' [3](https://www.biorxiv.org/content/10.64898/2026.01.13.699237v1.full) - and empty droplets can be addressed by setting a lower threshold to separate them from intact cells. Dying cells show high mitochondrial percentages.
+- Genes detected in a tiny number of cells are usually artifacts, ambient RNA, or mapping errors rather than biological signals. Removing barely expressed genes reduces matrix dimensions and thus computation.
+- Other factors such as sequencing depth, capture technology (plate-based/droplets), type of tissue are taken into account to determine the thresholds.
+
+------------------------------------------------------------------------
+
+### UMI Count Requirement: `< 400 and > 20,000`
+
+```{r, message=FALSE, warning=FALSE}
+umi_sum <- t(sapply(brain, function(object){
+ umi <- object$nCount_RNA
+ c(total_cells = length(umi), lower_400 = sum(umi<400), greater_20000 = sum(umi>20000),pass=sum(umi>=400 & umi<=20000))}))
+
+umi_sum
+```
+
+- No cells below 400 UMIs
+- 5,985 above 20,000
+- Pass\$\_{total}=\$44,262
+
+### Plotting Distributions Before Applying UMI Thresholds:
+
+```{r PLOTTING-NO-THRESHOLDS, message=FALSE, warning=FALSE}
+
+qc_data <- do.call(rbind, lapply(brain, function(object){object[[]]}))
+qc_data$sample_id <- factor(qc_data$sample_id, levels = names(brain))
+dim(qc_data)
+head(qc_data)
+
+##############################
+
+ggplot(qc_data,aes(x=sample_id,y=nCount_RNA,fill=condition)) + geom_violin(scale="width",trim=FALSE) + geom_boxplot(width=0.12,outlier.shape=NA,fill="white")+geom_hline(yintercept=400,color="blue",linetype="dashed")+geom_hline(yintercept=20000,color="red", linetype="dashed")+scale_y_log10(labels=scales::label_comma())+labs(title= "UMI COUNT BEFORE QC THRESHOLDS", subtitle="Dashed blue = 400 UMIs & Dashed red is 20,000 UMIs", x = "SAMPLES", y= "TOTAL UMI COUNT/CELL", fill="CONDITION")+theme_classic()
+```
+
+### Check Before Applying Cutoffs:
+
+- To make sure since the violin plots are "distorting" the data by showing a smooth estimate of the distribution
+
+```{r, message=FALSE, warning=FALSE}
+umi_minimum_check <- t(sapply(brain, function(object) {
+  umi <- object$nCount_RNA
+  c(minimum = min(umi), below_400 = sum(umi < 400), exactly_400 = sum(umi == 400), at_or_below_400 = sum(umi <= 400))}))
+
+umi_minimum_check
+```
+
+- The files being preprocessed (as mentioned in the Word document) may explain the lack of cells below $400$. They may already contain filtered barcodes.
+
+### Apply UMI Cutoffs:
+
+```{r UMI-cutoff, message=FALSE, warning=FALSE}
+
+brain_umi <- lapply(brain, function(object){subset(object,subset=nCount_RNA >=400 & nCount_RNA <=20000)})
+
+umi_filter <- data.frame(sample_id=names(brain), condition=brain_conditions[names(brain)], count_before=sapply(brain,ncol), count_after=sapply(brain_umi,ncol))
+```
+
+```{r UMI-cutoff-comparison, message=FALSE, warning=FALSE}
+
+umi_filter$cells_removed <- umi_filter$count_before - umi_filter$count_after
+umi_filter$percentage_removed <- round(100 * umi_filter$cells_removed / umi_filter$count_before, 1)
+umi_filter
+```
+
+- FILTERED values stored in `brain_umi`
+
+### Detected Gene Count Requirement: `< 200 and > 5,000`
+
+```{r, message=FALSE, warning=FALSE}
+gene_sum <- t(sapply(brain_umi, function(object){
+ genes <- object$nFeature_RNA
+ c(total_cells = length(genes), lower_200 = sum(genes<200), greater_5000 = sum(genes>5000),pass=sum(genes>=200 & genes<=5000))}))
+
+gene_sum
+```
+
+- 789 cells above
+
+### Plot Before Applying Gene Thresholds:
+
+```{r, message=FALSE, warning=FALSE}
+gene_qc_data <- do.call(rbind, lapply(brain_umi, function(object){object[[]]}))
+gene_qc_data$sample_id <- factor(gene_qc_data$sample_id, levels = names(brain_umi))
+dim(gene_qc_data)
+head(gene_qc_data)
+
+##############################
+
+ggplot(gene_qc_data,aes(x=sample_id,y=nFeature_RNA,fill=condition)) + geom_violin(scale="width",trim=FALSE) + geom_boxplot(width=0.12,outlier.shape=NA,fill="white")+  geom_hline(yintercept=200,color="blue",linetype="dashed") +geom_hline(yintercept=5000,color="red", linetype="dashed")+scale_y_log10(labels=scales::label_comma())+labs(title= "DETECTED GENE COUNT BEFORE QC THRESHOLDS", subtitle="Dashed blue = 200 Genes & Dashed red = 5,000 Genes", x = "SAMPLES", y= "DETECTED GENES/CELL", fill="CONDITION")+theme_classic()
+```
+
+### Apply Gene Count Cutoffs:
+
+```{r GENE-cutoff, message=FALSE, warning=FALSE}
+
+brain_gene <- lapply(brain_umi, function(object){subset(object,subset=nFeature_RNA >=200 & nFeature_RNA <=5000)})
+
+gene_filter <- data.frame(sample_id=names(brain_umi), condition=brain_conditions[names(brain_umi)], count_before=sapply(brain_umi,ncol), count_after=sapply(brain_gene,ncol))
+```
+
+```{r GENE-cutoff-comparison, message=FALSE, warning=FALSE}
+
+gene_filter$cells_removed <- gene_filter$count_before - gene_filter$count_after
+gene_filter$percentage_removed <- round(100 * gene_filter$cells_removed / gene_filter$count_before, 1)
+gene_filter
+```
+
+### Mitochondrial Proportion:
+
+- `MT-` prefix (HGNC designation) is for genes encoded on the human mitochondrial genome. Used to distinguish genes from nuclear genes.
+
+```{r, message=FALSE, warning=FALSE}
+### Check whether MT- is used somewhere just in case even though these files belong to the macaque
+mt_gene_counts <- sapply(brain_gene, function(object) {sum(grepl("^MT-", rownames(object)))})
+mt_gene_counts
+```
+
+- [NCBI Ref Seq NC_005943.1](https://www.ncbi.nlm.nih.gov/nuccore/NC_005943.1): Whereas HGNC assigned `MT-` prefix to all 37 human mitochondrial genes to distinguish them from nuclear genes and nuclear mitochondrial segments, Macaque follows standard NCBI organelle annotation conventions.
+
+```{r MACAQUE-MITO-CODES}
+mito_pattern <- paste0("^(","ND[1-6]|ND4L|","COX?[1-3]|","ATP6|ATP8|","CYTB|","12S|16S|RNR1|RNR2",")$")
+mito_gene_counts <- sapply(brain_gene, function(object) {sum(grepl(mito_pattern, rownames(object)))})
+mito_gene_counts
+
+###checking the codes from control and treated samples
+grep(mito_pattern,rownames(brain_gene[["74T"]]),value = TRUE)
+grep(mito_pattern,rownames(brain_gene[["47010"]]),value = TRUE)
+```
+
+### Calculate Mitochondrial UMI Percentage for Sample Before Filtering:
+
+```{r, message=FALSE, warning=FALSE}
+mito_genes <- grep(mito_pattern, rownames(brain_gene[["74T"]]), value=TRUE)
+brain_mitocon <- lapply(brain_gene, function(object){PercentageFeatureSet(object, features=mito_genes, col.name="percent.mt")})
+head(brain_mitocon[["74T"]][[]])
+```
+
+```{r, message=FALSE, warning=FALSE}
+mito_sum <- t(sapply(brain_mitocon, function(object) {
+  mt <- object$percent.mt
+  c(total_cells = length(mt), minimum = min(mt), median = median(mt), mean = mean(mt), maximum = max(mt), above_15 = sum(mt > 15), pass = sum(mt <= 15))}))
+
+round(mito_sum, 2)
+```
+
+- For sample `74T` only 1 cell exceeds `15%` (percentage = `32.16%`)
+- Treated samples show low mitochondrial percentages (in contrast to control)
+
+### Plot Before Applying Mito Threshold:
+
+```{r, message=FALSE, warning=FALSE}
+mito_qc_data <- do.call(rbind, lapply(brain_mitocon, function(object) {object[[]]}))
+
+mito_qc_data$sample_id <- factor(mito_qc_data$sample_id, levels = names(brain_mitocon))
+
+ggplot(mito_qc_data, aes(x = sample_id, y = percent.mt, fill = condition)) + geom_violin(scale = "width",trim = TRUE) + geom_boxplot(width = 0.12, outlier.shape = NA, fill = "white") + geom_hline(yintercept = 15, color = "red", linetype = "dashed") + labs(title = "MITOCHONDRIAL UMI PERCENTAGE BEFORE FILTERING", subtitle = "Dashed red = 15%", x = "SAMPLE", y = "MITO UMIs (%)", fill = "CONDITION") + theme_classic()
+```
+
+- snRNA-seq data usually show very low levels of mitochondrial proportions compared to scRNA-seq.
+
+Rationale:
+
+1.  Location (given that mitochondria are found in the cytoplasm)
+2.  Wet-lab protocols
+3.  In snRNA-seq, cyctoplasm is removed for all inputs and therefore cell lysis doesn't increase mitochondrial transcript ratios.
+
+[Source](https://bioconductor.org/books/3.12/OSCA/single-nuclei-rna-seq-processing.html)
+
+### Apply `15%` Threshold:
+
+```{r, message=FALSE, warning=FALSE}
+brain_qc <- lapply(brain_mitocon,function(object){subset(object,subset=percent.mt <= 15)})
+
+mito_filter <- data.frame(sample_id=names(brain_mitocon), condition=brain_conditions[names(brain_mitocon)],counts_before=sapply(brain_mitocon,ncol),counts_after=sapply(brain_qc,ncol))
+
+mito_filter$cells_removed <- mito_filter$counts_before - mito_filter$counts_after
+mito_filter
+
+### brain_qc
+```
+
+### Cell Cycle Scoring & Regression
+
+Differences in the cell cycle phase can introduce a dominant confounding source of variance in single cell data. Therefore, such effects should be regressed out to prevent the cells from clustering by proliferation state rather than cell type or biological experimental group.
+
+- **Cell Cycle Scoring**: This process assigns a score to each cell based on expression of *canonical phase-specific* marker genes:
+  - Phase score calculation $S_{i,p}$ is calculated as the average expression of phase-specific genes minus the average expression of a control gene set $G_{ctrl}$ matched for mean expression.
+  - Phase assignment. If $max(S_{i,S}, S_{i,G2M})<0$, cell $i$ is assigned to $G_1$/$G_0$. Otherwise, cell $i$ is assigned to $arg$ $max_{p}(S_{i,S}, S_{i,G2M})$
+- **Cell Cycle Regression**: When $S_{i,S}$ and $S_{i,G2M}$ are calculated, a linear regression model mitigates unwanted variance across all genes before applying PCA/UMAP/t-SNE
+
+**CELL CYCLE**:
+
+- To first confirm if Seurat's human cell cycle markers match macaque's.
+
+```{r CELL-CYCLE-STEP-1, message=FALSE, warning=FALSE}
+
+cell_cycle_matches <- t(sapply(brain_qc, function(object){s_found <- intersect(cc.genes$s.genes, rownames(object))
+    g2m_found <- intersect(cc.genes$g2m.genes, rownames(object))
+    c(S_markers_total = length(cc.genes$s.genes), S_markers_found = length(s_found), G2M_markers_total = length(cc.genes$g2m.genes), G2M_markers_found = length(g2m_found))}))
+
+cell_cycle_matches
+```
+
+```{r, message=FALSE, warning=FALSE}
+s_genes_macaque <- intersect(cc.genes$s.genes, rownames(brain_qc[["74T"]]))
+g2m_genes_macaque <- intersect(cc.genes$g2m.genes, rownames(brain_qc[["74T"]]))
+s_genes_macaque
+g2m_genes_macaque
+```
+
+They do match and therefore I proceed with Seurat's markers but first normalize [Source](https://satijalab.org/seurat/articles/cell_cycle_vignette.html):
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(1234)
+brain_cc <- lapply(brain_qc, function(object){object <- NormalizeData(object, normalization.method = "LogNormalize", scale.factor = 10000, verbose = FALSE)
+  s_features <- intersect(cc.genes$s.genes, rownames(object))
+  g2m_features <- intersect(cc.genes$g2m.genes, rownames(object))
+  object <- CellCycleScoring(object, s.features = s_features, g2m.features = g2m_features, set.ident = FALSE)
+  return(object)})
+
+head(brain_cc[["74T"]][[]][,c("S.Score", "G2M.Score", "Phase")])
+```
+
+```{r, message=FALSE, warning=FALSE}
+phase_summary <- do.call(rbind, lapply(names(brain_cc), function(sample_id){phases <- factor(brain_cc[[sample_id]]$Phase, levels = c("G1", "S", "G2M"))
+    counts <- table(phases)
+    data.frame(sample_id = sample_id, condition = brain_conditions[[sample_id]], phase = names(counts), cells = as.integer(counts), percentage = round(100 * as.integer(counts) / sum(counts), 2))}))
+
+phase_summary
+```
+
+```{r CELL-PHASES-PLOT, message=FALSE, warning=FALSE}
+ggplot(phase_summary, aes(x = sample_id, y = percentage, fill = phase)) + geom_col() + labs(title = "CELL CYCLE PHASES", x = "SAMPLE", y = "CELLS PERCENTAGE (%)", fill = "PHASE") + theme_classic()
+```
+
+This is **NOT** biologically normal for single nucleus RNA-seq.
+
+From the plot, the cell cycle phases look balanced. Seurat calculates a continuous S phase and G2/M phase scores and then assigns each nucleus a discrete phase.:
+
+$$\operatorname{Phase}(c)=
+\begin{cases}
+G_1, & S_c < 0 \text{ and } G_c < 0, \\
+S, & S_c > G_c \text{ and both scores are NOT negative}, \\
+G_2/M, & G_c > S_c \text{ and both scores are NOT both negative}, \\
+\text{Undecided}, & S_c = G_c \text{ and both scores are NOT negative}.
+\end{cases}$$
+
+```{r, message=FALSE, warning=FALSE}
+score_diagnostics <- do.call(rbind,lapply(names(brain_cc), function(sample_id){object <- brain_cc[[sample_id]]
+    data.frame(sample_id = sample_id, condition = brain_conditions[[sample_id]], median_S = median(object$S.Score), median_G2M = median(object$G2M.Score), percent_both_negative = round(100 * mean(object$S.Score < 0 & object$G2M.Score < 0), 2), percent_S_positive = round(100 * mean(object$S.Score > 0), 2), percent_G2M_positive = round(100 * mean(object$G2M.Score > 0), 2))}))
+
+score_diagnostics
+```
+
+So even when the signal is weak, a nucleus can be classified as S or G2M.
+
+```{r, message=FALSE, warning=FALSE}
+proliferation_markers <- c("MKI67", "TOP2A", "CDK1", "CCNB1", "CCNB2", "PCNA")
+
+marker_detection <- do.call(rbind, lapply(names(brain_cc), function(sample_id){object <- brain_cc[[sample_id]]
+    present_markers <- intersect(proliferation_markers, rownames(object))
+    counts <- LayerData(object, assay = "RNA", layer = "counts")[present_markers, , drop = FALSE]
+    percentages <- 100 * Matrix::rowMeans(counts > 0)
+    data.frame(sample_id = sample_id, condition = brain_conditions[[sample_id]], marker = names(percentages), percent_nuclei_detected = as.numeric(percentages))}))
+
+marker_detection
+
+ggplot(marker_detection, aes(x = sample_id, y = percent_nuclei_detected, fill = marker)) + geom_col(position = "dodge") + labs(title = "DETECTION MARKERS", x = "SAMPLE", y = "NUCLEI EXPRESSING MARKER (%)", fill = "MARKER") + theme_classic()
+
+### brain_cc (QC + cell cycle metadata)
+```
+
+***Because canonical markers were barely detected, the cell cycle scores are retained as metadata but were NOT REGRESSED during normalization.***
+
+### Doublets
+
+```{r, include=FALSE}
+df_74T <- brain_cc[["74T"]]
+DefaultAssay(df_74T) <- "RNA"
+
+set.seed(1234)
+
+df_74T <- FindVariableFeatures(df_74T, selection.method = "vst", nfeatures = 2000,verbose = FALSE)
+df_74T <- ScaleData(df_74T, features = VariableFeatures(df_74T), verbose = FALSE)
+df_74T <- RunPCA(df_74T, features = VariableFeatures(df_74T), npcs = 50,verbose = FALSE)
+```
+
+```{r, include=FALSE}
+ElbowPlot(df_74T,ndims = 50) + labs(title = "PCA ELBOW FOR 74T")
+```
+
+```{r, include=FALSE}
+set.seed(1234)
+sweep_74T <- paramSweep(df_74T,PCs = 1:20, sct = FALSE)
+
+sweep_stats_74T <- summarizeSweep(sweep_74T, GT = FALSE)
+bcmvn_74T <- find.pK(sweep_stats_74T)
+
+bcmvn_74T$pK_numeric <- as.numeric(as.character(bcmvn_74T$pK))
+
+best_74T <- bcmvn_74T[which.max(bcmvn_74T$BCmetric), c("pK", "BCmetric")]
+best_74T
+```
+
+```{r, include=FALSE}
+ggplot(bcmvn_74T, aes(x = pK_numeric, y = BCmetric)) + geom_line() + geom_point() + geom_vline(xintercept = as.numeric(as.character(best_74T$pK)), color = "red", linetype = "dashed") + labs(title = "DoubletFinder pK sweep: 74T", subtitle = "Red line marks maximum BCmetric", x = "pK", y = "BCmetric") + theme_classic()
+```
+
+```{r, include=FALSE}
+doublet_rate_74T <- 0.008 * (ncol(df_74T) / 1000)
+doublet_rate_74T
+```
+
+```{r, include=FALSE}
+nExp_74T <- round(doublet_rate_74T * ncol(df_74T))
+nExp_74T
+```
+
+```{r, include=FALSE}
+set.seed(1234)
+df_74T <- doubletFinder( df_74T, PCs = 1:20, pN = 0.25, pK = 0.25, nExp = nExp_74T, reuse.pANN = NULL, sct = FALSE)
+```
+
+```{r, include=FALSE}
+df_columns <- grep(pattern = "pANN|DF.classifications", x = colnames(df_74T[[]]), value = TRUE)
+df_columns
+
+class_column_74T <- tail(grep("^DF.classifications", colnames(df_74T[[]]), value = TRUE), 1)
+class_column_74T
+
+table(df_74T[[class_column_74T, drop = TRUE]])
+```
+
+```{r, include=FALSE}
+pann_column_74T <- tail(grep("^pANN", colnames(df_74T[[]]), value = TRUE), 1)
+df_74T$doublet_status <- df_74T[[class_column_74T, drop = TRUE]]
+df_74T$doublet_pANN <- df_74T[[pann_column_74T, drop = TRUE]]
+
+doublet_summary_74T <- df_74T[[]] |> dplyr::group_by(doublet_status) |>
+  dplyr::summarise(nuclei = dplyr::n(), median_UMI = median(nCount_RNA), median_genes = median(nFeature_RNA), median_pANN = median(doublet_pANN), mean_pANN = mean(doublet_pANN))
+
+doublet_summary_74T
+```
+
+```{r, include=FALSE}
+set.seed(1234)
+df_74T <- RunUMAP(df_74T, reduction = "pca", dims = 1:20, seed.use = 1234, verbose = FALSE)
+DimPlot(df_74T, reduction = "umap", group.by = "doublet_status", cols = c("SINGLET" = "grey75", "DOUBLET" = "red")) + labs(title = "DoubletFinder predictions: 74T")
+```
+
+```{r, include=FALSE}
+FeaturePlot(df_74T,features = "doublet_pANN", reduction = "umap") + labs(title = "DoubletFinder pANN score: 74T")
+```
+
+```{r, include=FALSE}
+VlnPlot(df_74T, features = c("nCount_RNA", "nFeature_RNA"), group.by = "doublet_status", pt.size = 0, ncol = 2)
+```
+
+```{r, include=FALSE}
+columns_before <- colnames(df_74T[[]])
+set.seed(1234)
+df_74T <- doubletFinder(df_74T, PCs = 1:20, pN = 0.25, pK = 0.23, nExp = nExp_74T, reuse.pANN = NULL, sct = FALSE)
+new_columns <- setdiff(colnames(df_74T[[]]), columns_before)
+class_column_023 <- grep("^DF.classifications", new_columns, value = TRUE)
+class_column_023
+```
+
+```{r, include=FALSE}
+comparison_74T <- table(pK_029 = df_74T$doublet_status, pK_023 = df_74T[[class_column_023, drop = TRUE]])
+comparison_74T
+```
+
+```{r, include=FALSE}
+calls_029 <- df_74T$doublet_status
+calls_023 <- df_74T[[class_column_023, drop = TRUE]]
+
+df_74T$doublet_consensus <- ifelse(calls_029 == "Doublet" & calls_023 == "Doublet", "Consensus doublet", ifelse(calls_029 == "Singlet" & calls_023 == "Singlet", "Consensus singlet", "pK-sensitive"))
+table(df_74T$doublet_consensus)
+```
+
+```{r, include=FALSE}
+brain_singlets <- brain_cc
+brain_singlets[["74T"]]$doublet_status <- df_74T$doublet_status
+brain_singlets[["74T"]]$doublet_pANN <- df_74T$doublet_pANN
+brain_singlets[["74T"]] <- subset(brain_singlets[["74T"]], subset = doublet_status == "Singlet")
+ncol(brain_singlets[["74T"]])
+```
+
+Further validation of the doublets would be preferred for more rigorous data analysis but at this stage and given the nature of the project the evidence is sufficient to proceed to the next step.
+
+```{r, message=FALSE, warning=FALSE}
+run_doubletfinder <- function(object, sample_id, pcs = 1:20){
+  clean_object <- object
+  work_object <- object
+  DefaultAssay(work_object) <- "RNA"
+  
+  set.seed(1234)
+
+  work_object <- FindVariableFeatures(work_object, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+  work_object <- ScaleData(work_object, features = VariableFeatures(work_object), verbose = FALSE)
+  work_object <- RunPCA(work_object, features = VariableFeatures(work_object), npcs = max(pcs), verbose = FALSE)
+
+  sweep <- paramSweep(work_object, PCs = pcs, sct = FALSE)
+  sweep_stats <- summarizeSweep(sweep, GT = FALSE)
+  bcmvn <- find.pK(sweep_stats)
+  best_pK <- as.numeric(as.character(bcmvn$pK[which.max(bcmvn$BCmetric)]))
+
+  expected_rate <- 0.008 * (ncol(work_object) / 1000)
+  expected_doublets <- round(expected_rate * ncol(work_object))
+  work_object <- doubletFinder(work_object, PCs = pcs, pN = 0.25, pK = best_pK, nExp = expected_doublets, reuse.pANN = NULL, sct = FALSE)
+  class_column <- tail(grep("^DF.classifications", colnames(work_object[[]]), value = TRUE), 1)
+  pann_column <- tail(grep("^pANN", colnames(work_object[[]]), value = TRUE), 1)
+
+  clean_object$doublet_status <- work_object[[class_column, drop = TRUE]]
+  clean_object$doublet_pANN <- work_object[[pann_column, drop = TRUE]]
+  singlets <- subset(clean_object, subset = doublet_status == "Singlet")
+  list(object = singlets, summary = data.frame(sample_id = sample_id, pK = best_pK, estimated_rate = expected_rate, expected_doublets = expected_doublets, cells_before = ncol(clean_object), cells_after = ncol(singlets)))
+}
+```
+
+```{r, message=FALSE, warning=FALSE}
+remaining_samples <- setdiff(names(brain_cc), "74T")
+df_results <- list()
+
+for (sample_id in remaining_samples){message("Processing ", sample_id)
+  result <- run_doubletfinder(object = brain_cc[[sample_id]], sample_id = sample_id)
+  brain_singlets[[sample_id]] <- result$object
+  df_results[[sample_id]] <- result$summary}
+```
+
+```{r, message=FALSE, warning=FALSE}
+doubletfinder_summary <- rbind(data.frame(sample_id = "74T", pK = 0.29, estimated_rate = doublet_rate_74T, expected_doublets = 387, cells_before = 6953, cells_after = 6566), do.call(rbind, df_results))
+doubletfinder_summary
+```
+
+```{r, message=FALSE, warning=FALSE}
+sapply(brain_singlets, ncol)
+
+### brain_singlets
+```
+
+### Ambient RNA Correction
+
+`SoupX` requires raw empty droplet counts to estimate ambient profile. Given that these are preprocessed files, I will use `DecontX` which has empty droplets as optional.
+
+```{r, include=FALSE}
+counts_74T_singlets <- LayerData(brain_singlets[["74T"]], assay = "RNA", layer = "counts")
+dim(counts_74T_singlets)
+```
+
+```{r, include=FALSE}
+set.seed(12345)
+decontx_74T <- decontX::decontX(counts_74T_singlets, seed = 12345, verbose = TRUE)
+```
+
+```{r, include=FALSE}
+names(decontx_74T)
+dim(decontx_74T$decontXcounts)
+summary(decontx_74T$contamination)
+range(decontx_74T$contamination)
+
+contamination_74T <- decontx_74T$contamination
+if (max(contamination_74T, na.rm = TRUE) <= 1){contamination_74T <- 100 * contamination_74T}
+summary(contamination_74T)
+```
+
+```{r, include=FALSE}
+hist(contamination_74T, breaks = 50, main = "AMBIENT RNA - 74T", xlab = "APPROX. CONTAIMINATION (%)", col = "steelblue", border = "white")
+```
+
+```{r, include=FALSE}
+contamination_74T <- 100 * decontx_74T$contamination
+ambient_tail_74T <- c(total_nuclei = length(contamination_74T), above_10_percent = sum(contamination_74T > 10), above_20_percent = sum(contamination_74T > 20), above_50_percent = sum(contamination_74T > 50), above_75_percent = sum(contamination_74T > 75))
+
+ambient_tail_74T
+```
+
+```{r, include=FALSE}
+corrected_counts_74T <- decontx_74T$decontXcounts
+original_umi_74T <- Matrix::colSums(counts_74T_singlets)
+corrected_umi_74T <- Matrix::colSums(corrected_counts_74T)
+ambient_qc_74T <- data.frame(cell = colnames(counts_74T_singlets), contamination_percent = contamination_74T, original_UMI = original_umi_74T, corrected_UMI = corrected_umi_74T, percent_counts_removed = 100 * (original_umi_74T - corrected_umi_74T) / original_umi_74T)
+
+head(ambient_qc_74T[order(ambient_qc_74T$contamination_percent, decreasing = TRUE), ], 15)
+
+cor(ambient_qc_74T$contamination_percent, ambient_qc_74T$percent_counts_removed, method = "spearman")
+```
+
+```{r, message=FALSE, warning=FALSE}
+brain_decontx <- vector(mode = "list", length = length(brain_singlets))
+names(brain_decontx) <- names(brain_singlets)
+decontx_summary <- vector(mode = "list", length = length(brain_singlets))
+names(decontx_summary) <- names(brain_singlets)
+
+for (sample_id in names(brain_singlets)) {message("Running DecontX for sample: ", sample_id)
+  object <- brain_singlets[[sample_id]]
+  original_counts <- LayerData(object, assay = "RNA", layer = "counts")
+
+  set.seed(12345)
+
+  decontx_result <- decontX::decontX(original_counts, seed = 12345, verbose = TRUE)
+  corrected_counts <- round(decontx_result$decontXcounts)
+  stopifnot(identical(colnames(original_counts), colnames(corrected_counts)))
+  object[["decontX"]] <- CreateAssay5Object(counts = corrected_counts)
+  object$decontX_contamination <- 100 * decontx_result$contamination
+  object$nCount_decontX <- Matrix::colSums(corrected_counts)
+  object$nFeature_decontX <- Matrix::colSums(corrected_counts > 0)
+  decontx_summary[[sample_id]] <- data.frame(sample_id = sample_id, condition = unique(object$condition), nuclei = ncol(object), median_contamination = median(object$decontX_contamination), mean_contamination = mean(object$decontX_contamination), above_10_percent = sum(object$decontX_contamination > 10), above_20_percent = sum(object$decontX_contamination > 20), above_50_percent = sum(object$decontX_contamination > 50), corrected_UMI_below_400 = sum(object$nCount_decontX < 400), corrected_genes_below_200 = sum(object$nFeature_decontX < 200))
+  brain_decontx[[sample_id]] <- object
+  rm(decontx_result, corrected_counts, original_counts)
+  gc()}
+
+decontx_summary <- do.call(rbind, decontx_summary)
+rownames(decontx_summary) <- NULL
+
+decontx_summary
+```
+
+**Post QC After Ambient RNA Removal**:
+
+```{r POST-QC-STATS, message=FALSE, warning=FALSE}
+post_decontx_qc <- do.call(rbind, lapply(names(brain_decontx), function(sample_id){object <- brain_decontx[[sample_id]]
+  fail_umi <- object$nCount_decontX < 400
+  fail_genes <- object$nFeature_decontX < 200
+  fail_either <- fail_umi | fail_genes
+  data.frame(sample_id = sample_id, condition = unique(object$condition), nuclei_before = ncol(object), fail_UMI = sum(fail_umi), fail_genes = sum(fail_genes), fail_either = sum(fail_either), nuclei_after = sum(!fail_either), percentage_removed = round(100 * sum(fail_either) / ncol(object), 2))}))
+rownames(post_decontx_qc) <- NULL
+
+post_decontx_qc
+```
+
+```{r APPLY-POST-QC, message=FALSE, warning=FALSE}
+brain_clean <- lapply(brain_decontx, function(object){keep_cells <- colnames(object)[object$nCount_decontX >= 400 & object$nFeature_decontX >= 200]
+  subset(object, cells = keep_cells)})
+names(brain_clean) <- names(brain_decontx)
+
+sapply(brain_clean, ncol)
+
+### brain_clean
+```
+
+```{r ACTIVE-DEFAULT-ARRAY, message=FALSE, warning=FALSE}
+brain_clean <- lapply(brain_clean, function(object){DefaultAssay(object) <- "decontX"
+    object})
+```
+
+```{r SAVE-BRAIN_CLEAN}
+# saveRDS(brain_clean, file = "brain_clean.rds", compress = FALSE)
+```
+
+# PREP for REFERENCE-BASED CELL-TYPING (QUERY):
+
+```{r LOAD-BRAIN_CLEAN}
+brain_clean <- readRDS("brain_clean.rds")
+```
+
+```{r PREPROCESS-BRAIN_CLEAN-QUERY, message=FALSE, warning=FALSE}
+brain_query_log <- lapply(brain_clean, NormalizeData)
+```
+
+------------------------------------------------------------------------
+
+### Normalization with scTransform
+
+Normalization, variance stabilization, and feature selection to model sn- and sc-RNA seq data using **regularized negative binomial regression**.
+
+High depth cells can artificially cluster away from low depth ones of the exact cell type and highly expressed genes can dominate PCA results just becuase they have higher variance.
+
+$$log(\mu_{g,c})=\beta_{0,g}+\beta_{1,g}log_{10}(nCount_c)$$ where, $\mu_{g,c}$ is expected count for gene $g$ in cell $c$. $nCount_c$ is total UMI count of $c$. $\beta_{0,g}$ and $\beta_{1,g}$ are gene specific intercept and slope parameters.
+
+After fitting, `SCTransform` calculates **Pearson residuals (z)** which represent *variance-stabilized expression values*
+
+```{r SCTRANSFORM-normalizaiton, message=FALSE, warning=FALSE}
+set.seed(12345)
+
+brain_sct <- lapply(names(brain_clean), function(sample_id){message("RUNNING: ", sample_id)
+    object <- brain_clean[[sample_id]]
+    object <- SCTransform(object, assay = "decontX", new.assay.name = "SCT", vst.flavor = "v2", variable.features.n = 3000, vars.to.regress = NULL, conserve.memory = TRUE, seed.use = 12345, verbose = TRUE)
+    object})
+
+names(brain_sct) <- names(brain_clean)
+```
+
+```{r SUMMARY-SCTransform, message=FALSE, warning=FALSE}
+sct_summary <- do.call(rbind,lapply(names(brain_sct), function(sample_id){object <- brain_sct[[sample_id]]
+    data.frame(sample_id = sample_id, condition = unique(object$condition), nuclei = ncol(object), SCT_features = nrow(object[["SCT"]]), variable_features = length(VariableFeatures(object, assay = "SCT")), active_assay = DefaultAssay(object))}))
+rownames(sct_summary) <- NULL
+
+sct_summary
+
+saveRDS(brain_sct,file = "brain_sct.rds")
+
+### brain_sct 
+```
+
+### PCA, Harmony, UMAP
+
+```{r LOAD-brain_sct}
+brain_sct <- readRDS("brain_sct.rds")
+```
+
+```{r PCA-setup, message=FALSE, warning=FALSE}
+pca_features <- SelectIntegrationFeatures(object.list = brain_sct, nfeatures = 3000)
+length(pca_features)
+head(pca_features)
+```
+
+Across multiple samples/datasets, technical variation can dominate biological variation. On the UMAP, cells can cluster by `Sample_ID` or by batch instead of cell type. One must ensure that the cluster by **biological cell type** regardless of the origin of the sample. Therefore, anchor-based integration eliminates batch effects so identical cell types across various samples align into shared biological clusters:
+
+```{r INTEGRATION-setup, message=FALSE, warning=FALSE}
+brain_sct_prepared <- PrepSCTIntegration(object.list = brain_sct, anchor.features = pca_features,verbose = TRUE)
+```
+
+```{r MERGE-nuclei, message=FALSE, warning=FALSE}
+brain_merged <- merge(x = brain_sct_prepared[[1]], y = brain_sct_prepared[-1], add.cell.ids = names(brain_sct_prepared), merge.data = TRUE, project = "BRAIN_snRNA")
+DefaultAssay(brain_merged) <- "SCT"
+VariableFeatures(brain_merged) <- pca_features
+
+ncol(brain_merged)
+anyDuplicated(colnames(brain_merged))
+table(brain_merged$sample_id, brain_merged$condition)
+```
+
+```{r PCA, message=FALSE, warning=FALSE}
+set.seed(12345)
+brain_merged <- RunPCA(object = brain_merged, assay = "SCT", features = pca_features, npcs = 50, reduction.name = "pca", verbose = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+brain_merged[["pca"]]
+dim(Embeddings(brain_merged, reduction = "pca"))
+
+ElbowPlot(brain_merged, reduction = "pca", ndims = 50) + ggtitle("PCA ELBOW")
+```
+
+Elbow shows bent around 8-10 and starts plateauing around 20-30. For this I am using 1-30 PCs. Given that the curve is very steep and then a not so smooth plateauing this could indicate that differences between the samples are dominating the primary axes of variation in the data **(sample-associated structure)**.
+
+```{r, message=FALSE, warning=FALSE}
+DimPlot(brain_merged, reduction = "pca", group.by = "sample_id")
+DimPlot(brain_merged, reduction = "pca", group.by = "condition")
+```
+
+```{r save brain_merged}
+saveRDS(brain_merged, file = "brain_merged.rds")
+```
+------------------------------------------------------------------------
+
+# Cell-Typing Reference-Based:
+
+```{r REFERENCE-processing-CELL-TYPING}
+#normalize
+#variable features (selected set x)
+#scale data (set x)
+#PCA
+# .libPaths(c("./brain_data/references/R_library", .libPaths()))
+# 
+# macaque_reference <- "./brain_data/references/GSE307184_singlet_reference_k123_seurat.rds"
+# macaque <- LoadSeuratRds(macaque_reference)
+# 
+# Layers(macaque[["RNA"]])
+# 
+# macaque <- NormalizeData(macaque)
+# macaque <- FindVariableFeatures(macaque, assay = "RNA", nfeatures = 3000)
+# macaque <- SketchData(object = macaque, ncells = 100000L, method = "LeverageScore", sketched.assay = "sketch", seed = 123L)
+# DefaultAssay(macaque) <- "sketch"
+# Layers(macaque[["sketch"]])
+# 
+# macaque <- FindVariableFeatures(macaque, nfeatures = 3000)
+# macaque <- ScaleData(macaque)
+# macaque <- RunPCA(macaque, npcs = 50, verbose = FALSE)
+```
+
+```{r}
+.libPaths(c("./brain_data/references/R_library", .libPaths()))
+processed_reference <- "./brain_data/references/GSE307184_singlet_reference_k123_sketch100k_processed.rds"
+macaque <- LoadSeuratRds(processed_reference)
+```
+
+# Anchors and Transfer
+
+```{r}
+# find reference-query anchors
+#transfer labels
+brain_anchors <- lapply(brain_query_log, function(query){FindTransferAnchors(reference = macaque, query = query, reference.assay = "sketch", query.assay = "decontX", normalization.method = "LogNormalize", reference.reduction = "pca", reduction = "pcaproject", dims = 1:30)})
+```
+
+```{r SAVE-BRAIN-ANCHORS}
+#saveRDS(brain_anchors, file="brain_anchors.rds", compress = FALSE)
+```
+
+```{r LOAD-ANCHORS}
+brain_anchors <- readRDS("brain_anchors.rds")
+```
+
+```{r TransferData}
+stopifnot(identical(names(brain_anchors), names(brain_query_log)))
+
+reference_cells <- Cells(macaque[["sketch"]])
+
+reference_class <- setNames(as.character(macaque[[]][reference_cells, "cell_class_annotation"]), reference_cells)
+
+reference_subtype <- setNames(as.character(macaque[[]][reference_cells, "subtype"]), reference_cells)
+
+brain_typed <- Map(function(anchors, query){class_predictions <- TransferData(anchorset = anchors, refdata = reference_class, dims = 1:30)
+
+  subtype_predictions <- TransferData(anchorset = anchors, refdata = reference_subtype, dims = 1:30)
+
+  transferred_metadata <- data.frame(predicted.cell_class = class_predictions$predicted.id, cell_class.score = class_predictions$prediction.score.max, predicted.subtype = subtype_predictions$predicted.id, subtype.score = subtype_predictions$prediction.score.max, row.names = rownames(class_predictions))
+
+  AddMetaData(query, metadata = transferred_metadata)}, brain_anchors, brain_query_log)
+
+names(brain_typed) <- names(brain_query_log)
+```
+
+```{r SAVE brain_typed}
+#saveRDS(brain_typed, file="brain_typed.rds", compress = FALSE)
+```
+
+```{r LOAD-brain_typed}
+brain_typed <- readRDS("brain_typed.rds")
+```
+
+```         
+                   predicted.cell_class cell_class.score
+CCACTTGAGGCTTAAA-1     oligodendrocytes                1
+TTTGATCCAGTGGCTC-1            microglia                1
+CTCACTGGTGTACAGG-1     oligodendrocytes                1
+ACCAAACCAACCCGCA-1     oligodendrocytes                1
+TATCCTACAGCAAGAC-1     oligodendrocytes                1
+ACTGTGAGTCAGGTGA-1     oligodendrocytes                1
+CAACAACAGACCTCAT-1     oligodendrocytes                1
+```
+
+# VALIDATION BROAD-CLASS MARKERS
+
+```{r VALIDATION}
+brain_typed_merged <- merge(x = brain_typed[[1]], y = brain_typed[-1], add.cell.ids = names(brain_typed), merge.data = TRUE, project = "BRAIN_TYPED")
+
+DefaultAssay(brain_typed_merged) <- "decontX"
+brain_typed_merged <- JoinLayers(brain_typed_merged, assay = "decontX")
+
+Idents(brain_typed_merged) <- "predicted.cell_class"
+```
+
+
+```{r MARKERS-PLOT}
+marker_vector <- unlist(broad_markers, use.names = FALSE)
+marker_vector[duplicated(marker_vector)]
+
+marker_vector <- unique(unlist(broad_markers, use.names = FALSE))
+```
+
+```{r, fig.width=18, fig.height=8}
+DotPlot(
+  brain_typed_merged,
+  features = marker_vector,
+  assay = "decontX",
+  group.by = "predicted.cell_class",
+  scale = FALSE
+) + RotatedAxis()
+
+### brain_typed_merged
+```
+```{r sabe brain-type-merged}
+saveRDS(brain_typed_merged, file = "brain_typed_merged.rds", compress = FALSE)
+```
+
+```{r LOAD-brain-merged-harmony-and-brain-typed}
+#brain_merged_harmony <- readRDS("brain_merged_harmony.rds")
+brain_typed <- readRDS("brain_typed.rds")
+brain_typed_merged <- readRDS("brain_typed_merged.rds")
+```
+
+---
+
+### For plotting reference-transferred labels onto SCT-HARMONY-UMAP coordinates
+
+```{r merge-brain-typed-to-brain-harmony}
+label_columns <- c("predicted.cell_class", "cell_class.score")
+
+typed_metadata <- do.call(
+  rbind,
+  lapply(names(brain_typed), function(sample_id) {metadata <- brain_typed[[sample_id]][[]][, label_columns, drop = FALSE]
+    rownames(metadata) <- paste0(sample_id, "_", rownames(metadata))
+    metadata}))
+
+stopifnot(
+  setequal(rownames(typed_metadata), colnames(brain_merged_harmony)))
+
+typed_metadata <- typed_metadata[colnames(brain_merged_harmony),
+  ,
+  drop = FALSE]
+
+brain_merged_harmony <- AddMetaData(object = brain_merged_harmony, metadata = typed_metadata)
+
+saveRDS(brain_merged_harmony, file="brain_merged_harmony_with_reference_labels.rds", compress = FALSE)
+```
+
+```{r}
+brain_merged_harmony <- readRDS(
+  "brain_merged_harmony_with_reference_labels.rds"
+)
+
+stopifnot(
+  "umap.harmony" %in% Reductions(brain_merged_harmony),
+  "predicted.cell_class" %in%
+    colnames(brain_merged_harmony[[]])
+)
+
+p_harmony_labels_highres <- DimPlot(
+  object = brain_merged_harmony,
+  reduction = "umap.harmony",
+  group.by = "predicted.cell_class",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 4,
+  pt.size = 0.25,
+  raster = FALSE) +
+  ggtitle(
+    "Query SCT/Harmony UMAP colored by reference-transferred broad classes"
+  ) +
+  theme(
+    plot.title = element_text(
+      size = 22,
+      face = "bold",
+      hjust = 0.5
+    ),
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 14),
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 14),
+    plot.margin = margin(20, 30, 20, 30)
+  )
+
+p_harmony_labels_highres
+
+ggsave(
+  filename = "UMAP_SCT_Harmony_reference_labels_600dpi.png",
+  plot = p_harmony_labels_highres,
+  device = ragg::agg_png,
+  width = 20,
+  height = 12.5,
+  units = "in",
+  dpi = 600,
+  bg = "white",
+  limitsize = FALSE
+)
+```
+---
+### IDENTIFY MITOCHONDRIAL CONTAMINATION AGAIN
+
+```{r identify-mitocondrial-contamination}
+mito_pattern <- paste0(
+  "^(MT-?)?(",
+  "ND[1-6]|ND4L|",
+  "COX?[1-3]|",
+  "ATP6|ATP8|",
+  "CYTB|",
+  "12S|16S|RNR1|RNR2",
+  ")$")
+
+mito_genes_check <- grep(pattern = mito_pattern, x = rownames(brain_typed_merged[["RNA"]]), value = TRUE, ignore.case = TRUE)
+
+length(mito_genes_check)
+sort(mito_genes_check)
+
+```
+
+```{r add-mitocondrial-percentage}
+brain_typed_merged$percent.mt.current <- PercentageFeatureSet(object = brain_typed_merged, features = mito_genes_check, assay = "RNA")
+```
+
+```{r display-percentages-mitochondria}
+p_mt_harmony_select <- FeaturePlot(object = brain_merged_harmony, features = "percent.mt.current", reduction = "umap.harmony", order = TRUE, pt.size = 0.25, raster = FALSE, cols = c("grey90", "gold", "red")) + labs(title = "Select mitochondrial-contaminated cells", color = "Mitochondrial\nUMIs (%)")
+
+p_mt_harmony_select
+```
+
+```{r select-contamited-cells}
+p_mt_cluster_check <- DimPlot(brain_merged_harmony, reduction = "umap.harmony", group.by = "harmony_snn_res.0.4", label = TRUE, repel = TRUE, pt.size = 0.25) + ggtitle("SCT/Harmony UMAP: resolution-0.4 cluster IDs")
+
+p_mt_cluster_check
+```
+---
+
+```{r IDENTIFY-MARKERS}
+DefaultAssay(brain_typed_merged) <- "decontX"
+Idents(brain_typed_merged) <- "predicted.cell_class"
+
+broad_class_markers <- FindAllMarkers(object = brain_typed_merged, assay = "decontX", only.pos = TRUE, min.pct = 0.10, logfc.threshold = 0.25, test.use = "wilcox", verbose = TRUE)
+```
+
+```{r SAVE-MARKER-LIST}
+write.csv(broad_class_markers, file = "brain_reference_based_markers_all.csv", row.names = FALSE)
+
+top10_markers <- broad_class_markers |> dplyr::filter(p_val_adj < 0.05) |> dplyr::group_by(cluster) |> dplyr::slice_max(order_by = avg_log2FC, n = 10, with_ties = FALSE) |> dplyr::ungroup()
+write.csv(top10_markers, file = "brain_markers_top10.csv", row.names = FALSE)
+
+```
+
+
+# UMAP MODEL FOR REFERENCE
+
+```{r UMAP reference-1k-sktch}
+DefaultAssay(macaque) <- "sketch"
+
+# Confirm that the reference PCA contains the 100,000 sketch cells
+nrow(Embeddings(macaque[["pca"]]))
+
+macaque <- RunUMAP(object = macaque, reduction = "pca", dims = 1:30, return.model = TRUE, reduction.name = "umap.reference", reduction.key = "UMAPref_", seed.use = 123L, verbose = TRUE)
+
+Reductions(macaque)
+```
+
+```{r MAP}
+stopifnot(
+  identical(names(brain_anchors), names(brain_typed)))
+
+brain_mapped <- Map(function(anchors, typed_query){
+
+    MapQuery(anchorset = anchors, query = typed_query, reference = macaque,
+
+      refdata = NULL,
+
+      new.reduction.name = "ref.pca",
+      reference.reduction = "pca",
+      reduction.model = "umap.reference",
+
+      projectumap.args = list(reduction.name = "ref.umap", reduction.key = "refUMAP_"), verbose = TRUE)}, brain_anchors, brain_typed)
+
+names(brain_mapped) <- names(brain_typed)
+```
+
+```{r}
+mapped_umap <- do.call(rbind, lapply(names(brain_mapped), function(sample_id){coordinates <- Embeddings(brain_mapped[[sample_id]][["ref.umap"]])
+    rownames(coordinates) <- paste0(sample_id, "_", rownames(coordinates))
+
+    coordinates}))
+
+stopifnot(setequal(rownames(mapped_umap),colnames(brain_typed_merged)))
+
+mapped_umap <- mapped_umap[colnames(brain_typed_merged),
+  ,
+  drop = FALSE]
+```
+
+```{r plot}
+brain_typed_merged[["ref.umap"]] <- CreateDimReducObject(embeddings = mapped_umap, key = "refUMAP_", assay = "decontX")
+stopifnot(
+  "ref.umap" %in% Reductions(brain_typed_merged)
+)
+
+p_reference_projected_highres <- DimPlot(
+  object = brain_typed_merged,
+  reduction = "ref.umap",
+  group.by = "predicted.cell_class",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 4,
+  pt.size = 0.25,
+  raster = FALSE
+) +
+  ggtitle(
+    "Query cells projected onto the GSE307184 reference UMAP"
+  ) +
+  theme(
+    plot.title = element_text(
+      size = 22,
+      face = "bold",
+      hjust = 0.5
+    ),
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 14),
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 14),
+    plot.margin = margin(20, 30, 20, 30)
+  )
+
+p_reference_projected_highres
+```
+```{r save-high-res}
+ggsave(
+  filename = "UMAP_query_projected_to_GSE307184_reference_600dpi.png",
+  plot = p_reference_projected_highres,
+  device = ragg::agg_png,
+  width = 20,
+  height = 12.5,
+  units = "in",
+  dpi = 600,
+  bg = "white",
+  limitsize = FALSE
+)
+```
+------------------------------------------------------------------------
+
+```{r load brain_merged}
+#brain_merged <- readRDS("brain_merged.rds")
+```
+
+# UMAP and HARMONY
+
+Moreover, the PCA plots add support to sample-associated structure claim. So, instead of cells from multiple samples blending together, samples are driving the PCs. As an example from sample_id, cyan color spike belong almost exclusively to `74T`. Thus, PC2 here is not capturing a biological pattern shared by all cells.
+
+```{r UMAP-before-HARMONY, message=FALSE, warning=FALSE}
+dims_use <- 1:30
+
+set.seed(12345)
+
+brain_merged <- RunUMAP(brain_merged, reduction = "pca", dims = dims_use, reduction.name = "umap.unintegrated", reduction.key = "UMAPraw_", seed.use = 12345, verbose = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+p_before_sample <- DimPlot(brain_merged, reduction = "umap.unintegrated", group.by = "sample_id", pt.size = 0.1) + ggtitle("BEFORE HARMONY: SAMPLE")
+
+p_before_condition <- DimPlot(brain_merged, reduction = "umap.unintegrated", group.by = "condition", pt.size = 0.1) + ggtitle("BEFORE: CONDITION")
+
+p_before_sample + p_before_condition
+```
+
+**HARMONY**:
+
+```{r HARMONY, message=FALSE, warning=FALSE}
+set.seed(12345)
+
+brain_merged <- harmony::RunHarmony(object = brain_merged, group.by.vars = "sample_id", reduction = "pca", dims.use = dims_use, reduction.save = "harmony", plot_convergence = TRUE, verbose = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+brain_merged[["harmony"]]
+dim(Embeddings(brain_merged, reduction = "harmony"))
+```
+
+```{r UMAP-after_HARMONY, message=FALSE, warning=FALSE}
+set.seed(12345)
+
+brain_merged <- RunUMAP(brain_merged, reduction = "harmony", dims = dims_use, reduction.name = "umap.harmony", reduction.key = "UMAPharmony_", seed.use = 12345, verbose = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+p_after_sample <- DimPlot(brain_merged, reduction = "umap.harmony", group.by = "sample_id", pt.size = 0.1) + ggtitle("AFTER HARMONY: SAMPLE")
+
+p_after_condition <- DimPlot(brain_merged, reduction = "umap.harmony", group.by = "condition", pt.size = 0.1) + ggtitle("AFTER: CONDITION")
+
+p_after_sample + p_after_condition
+```
+
+Good improvement after harmony while preserving different populations. Control and treated overlap nicely as well as sample_id. Here, Harmony corrected using`sample_id` and NOT condition/treatment. HOWEVER, there is intermixing of control and treated after correcting for sample_id which could point sample effect and condition being (partly) confounded
+
+```{r SAVE-checkpoint-HARMONY, message=FALSE, warning=FALSE}
+saveRDS(brain_merged, file = "brain_merged_harmony.rds")
+reduction = "umap.harmony"
+```
+
+```{r HARMONY-neighbor-GRAPH, message=FALSE, warning=FALSE}
+set.seed(12345)
+brain_merged <- FindNeighbors(object = brain_merged,reduction = "harmony", dims = 1:30, k.param = 20, graph.name = c("harmony_nn", "harmony_snn"),verbose = TRUE)
+```
+
+```{r HARMONY-GRAPH, message=FALSE, warning=FALSE}
+set.seed(12345)
+brain_merged <- FindClusters(object = brain_merged, graph.name = "harmony_snn", resolution = c(0.2, 0.4, 0.6, 0.8, 1.0), algorithm = 1, random.seed = 12345, verbose = TRUE)
+```
+
+```{r CLUSTERS, message=FALSE, warning=FALSE}
+cluster_columns <- grep(pattern = "harmony_snn_res", x = colnames(brain_merged[[]]), value = TRUE)
+cluster_columns
+
+cluster_resolution_summary <- data.frame(resolution_column = cluster_columns, number_of_clusters = sapply(cluster_columns, function(column){length(unique(brain_merged[[column]][, 1]))}))
+cluster_resolution_summary
+```
+
+```{r PLOT-CLUSTERS, message=FALSE, warning=FALSE}
+p <- DimPlot(brain_merged, reduction = "umap.harmony", group.by = cluster_columns, label = TRUE, label.size = 3, repel = TRUE, pt.size = 0.05, ncol = 2) & NoLegend()  
+p <- p & theme(plot.title = element_text(size = 10, face = "bold"), axis.title = element_text(size = 8), axis.text = element_text(size = 6))
+ggsave("umap_resolutions.png", plot = p, width = 10, height = 12, dpi = 300)
+p
+```
+```{r SAVE brain_merged_harmony}
+saveRDS(brain_merged, file="brain_merged_harmony.rds", compress = FALSE)
+```
+
+A resolution of 0.2 produces 16 clusters whereas a resolution of 1 produces 34 clusters.
+
+```{r RESOLUTION, message=FALSE, warning=FALSE}
+Idents(brain_merged) <- "harmony_snn_res.0.4"
+brain_merged$initial_cluster <- Idents(brain_merged)
+table(brain_merged$initial_cluster)
+
+cluster_sizes <- sort(table(brain_merged$initial_cluster))
+cluster_sizes
+```
+
+`cluster_sizes[cluster_sizes < 100]` returns `25` and `63` for 'small' clusters below 100 size
+
+```{r CLUSTER-by-SAMPLE, message=FALSE, warning=FALSE}
+cluster_by_sample <- table(cluster = brain_merged$initial_cluster, sample = brain_merged$sample_id)
+cluster_by_sample
+
+round(100 * prop.table(cluster_by_sample, margin = 1), digits = 1)
+```
+
+```{r CLUSTER-by-CONDITION, message=FALSE, warning=FALSE}
+cluster_by_condition <- table(cluster = brain_merged$initial_cluster,condition = brain_merged$condition)
+cluster_by_condition
+
+round(100 * prop.table(cluster_by_condition, margin = 1),digits = 1)
+```
+
+```{r SAVE-CLUSTER-06, message=FALSE, warning=FALSE}
+Idents(brain_merged) <- "harmony_snn_res.0.4"
+brain_merged$cluster_id <- Idents(brain_merged)
+table(brain_merged$cluster_id)
+
+# saveRDS(brain_merged,file = "brain_clustered_res0.4.rds")
+### brain_merged
+```
+
+```{r MARKER-GENES, message=FALSE, warning=FALSE}
+brain_merged_harmony <- readRDS("brain_merged_harmony.rds")
+
+DefaultAssay(brain_merged_harmony) <- "SCT"
+
+Idents(brain_merged_harmony) <- "harmony_snn_res.0.4"
+
+brain_merged_harmony <- PrepSCTFindMarkers(
+  brain_merged_harmony,
+  assay = "SCT",
+  verbose = TRUE)
+
+cluster_markers_sct <- FindAllMarkers(
+  object = brain_merged_harmony,
+  assay = "SCT",
+  only.pos = TRUE,
+  min.pct = 0.25,
+  logfc.threshold = 0.25,
+  test.use = "wilcox",
+  verbose = TRUE)
+```
+
+```{r SAVE-10-MARKERS, message=FALSE, warning=FALSE}
+write.csv(cluster_markers_sct, "brain_SCT_harmony_res04_cluster_markers_all.csv", row.names = FALSE)
+
+top10_sct_cluster_markers <- cluster_markers_sct |> dplyr::filter(p_val_adj < 0.05) |> dplyr::group_by(cluster) |> dplyr::slice_max( order_by = avg_log2FC, n = 10, with_ties = FALSE) |>dplyr::ungroup()
+
+write.csv(top10_sct_cluster_markers, "brain_SCT_harmony_res04_cluster_markers_top10.csv",row.names = FALSE)
+```
+
+```{r ANNOTATE-cell-type-for-unsupervised-clusters}
+brain_sctype <- readRDS("brain_merged_harmony.rds")
+
+DefaultAssay(brain_sctype) <- "SCT"
+
+brain_sctype$seurat_clusters <- factor(brain_sctype$harmony_snn_res.0.4)
+
+Idents(brain_sctype) <- "seurat_clusters"
+
+stopifnot(nlevels(brain_sctype$seurat_clusters) == 22)
+
+source("https://raw.githubusercontent.com/IanevskiAleksandr/sc-type/master/R/sctype_wrapper.R")
+
+brain_sctype <- run_sctype(
+  seurat_object = brain_sctype,
+  assay = "SCT",
+  scaled = TRUE,
+  known_tissue_type = "Brain",
+  name = "sctype_cell_type",
+  plot = FALSE
+)
+```
+
+```{r save-annotated-cells-unsupervised-clusters}
+# sctype_cluster_map <- unique(
+#   brain_sctype[[]][
+#     , c(
+#       "harmony_snn_res.0.4",
+#       "sctype_cell_type"
+#     )
+#   ]
+# )
+# 
+# sctype_cluster_map <- sctype_cluster_map[
+#   order(as.numeric(as.character(
+#     sctype_cluster_map$harmony_snn_res.0.4
+#   ))),
+# ]
+# 
+# write.csv(
+#   sctype_cluster_map,
+#   "brain_SCT_res04_ScType_annotations.csv",
+#   row.names = FALSE
+# )
+```
+
+```{r}
+# cluster_key <- sctype_cluster_map |>
+#   dplyr::transmute(
+#     harmony_cluster = as.character(harmony_snn_res.0.4),
+#     sctype_cell_type = as.character(sctype_cell_type)
+#   ) |>
+#   dplyr::distinct()
+# 
+# stopifnot(
+#   nrow(cluster_key) == 22,
+#   !anyDuplicated(cluster_key$harmony_cluster)
+# )
+# 
+# cluster_markers_sct_named <- cluster_markers_sct |>
+#   dplyr::mutate(
+#     harmony_cluster = as.character(cluster)
+#   ) |>
+#   dplyr::select(-cluster) |>
+#   dplyr::left_join(
+#     cluster_key,
+#     by = "harmony_cluster"
+#   ) |>
+#   dplyr::rename(
+#     cluster = sctype_cell_type
+#   ) |>
+#   dplyr::relocate(
+#     cluster,
+#     harmony_cluster
+#   )
+# 
+# stopifnot(
+#   !any(is.na(cluster_markers_sct_named$cluster))
+# )
+# 
+# write.csv(
+#   cluster_markers_sct_named,
+#   "brain_SCT_harmony_res04_cluster_markers_all_ScType.csv",
+#   row.names = FALSE
+# )
+# 
+# top10_sct_cluster_markers_named <- cluster_markers_sct_named |>
+#   dplyr::filter(p_val_adj < 0.05) |>
+#   dplyr::group_by(cluster, harmony_cluster) |>
+#   dplyr::slice_max(
+#     order_by = avg_log2FC,
+#     n = 10,
+#     with_ties = FALSE
+#   ) |>
+#   dplyr::ungroup()
+# 
+# write.csv(
+#   top10_sct_cluster_markers_named,
+#   "brain_SCT_harmony_res04_cluster_markers_top10_ScType.csv",
+#   row.names = FALSE
+# )
+```
+------------------------------------------------------------------------
+
+```{r plot reference-umap}
+# class_levels <- sort(
+#   unique(
+#     as.character(
+#       brain_merged_harmony$predicted.cell_class
+#     )
+#   )
+# )
+# 
+# class_key <- data.frame(
+#   class_id = seq_along(class_levels),
+#   predicted_cell_class = class_levels
+# )
+# 
+# brain_merged_harmony$reference_class_id <- factor(
+#   class_key$class_id[
+#     match(
+#       as.character(
+#         brain_merged_harmony$predicted.cell_class
+#       ),
+#       class_key$predicted_cell_class
+#     )
+#   ],
+#   levels = class_key$class_id
+# )
+# 
+# legend_labels <- paste0(
+#   class_key$class_id,
+#   " — ",
+#   class_key$predicted_cell_class
+# )
+# 
+# p_reference_numbered <- DimPlot(
+#   brain_merged_harmony,
+#   reduction = "umap.harmony",
+#   group.by = "reference_class_id",
+#   label = TRUE,
+#   label.size = 3,
+#   repel = TRUE,
+#   pt.size = 0.1
+# ) +
+#   scale_color_discrete(
+#     breaks = as.character(class_key$class_id),
+#     labels = legend_labels
+#   ) +
+#   labs(
+#     color = "Class ID — transferred broad class"
+#   ) +
+#   ggtitle(
+#     "Harmony UMAP colored by reference-transferred broad classes"
+#   )
+# 
+# 
+# ggsave(
+#   "UMAP_reference_transferred_broad_classes_numbered.png",
+#   plot = p_reference_numbered,
+#   width = 13,
+#   height = 8,
+#   dpi = 300
+# )
+# 
+# write.csv(
+#   class_key,
+#   "reference_transferred_broad_class_key.csv",
+#   row.names = FALSE
+# )
+```

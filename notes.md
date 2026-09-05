@@ -4,6 +4,16 @@
 
 With `trailingOnly = TRUE`, it returns only the custom arguments supplied after the script name when running via `Rscript` or `R --slave -f`.
 
+0. **TEST: Handle Human Alzheimer's Data + Metada**
+
+```
+Rscript scripts/00_combined_h5.R \
+  brain_data_human/snRNA-matrix.h5 \
+  brain_data_human/meta.csv.gz \
+  results/GSE174367/01_seurat \
+  exclude
+```
+
 1. **TEST: Create Seurat Object:**
 
 ```
@@ -38,3 +48,6 @@ Rscript scripts/02_qc.R \
   results/02_qc/output_files.thresholds.tsv \
   3 
 ```
+
+---
+

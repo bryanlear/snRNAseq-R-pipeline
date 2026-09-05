@@ -2,5 +2,7 @@ brain_data
 *.tsv
 *.rds
 *.pkl
+*.h5
+*.gz
 logs/
 .snakemake/
