@@ -49,5 +49,15 @@ Rscript scripts/02_qc.R \
   3 
 ```
 
+
+---
+
+***QC For Human data:***
+
+```
+snakemake human_all --cores 1 --printshellcmds
+````
+
+
 ---
 
