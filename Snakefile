@@ -68,7 +68,9 @@ rule qc_mito_summary:
         rds="results/GSE174367/02_qc/{sample}.rds",
         script="scripts/02.1_qc.R"
     output:
+        #For each nucleus --> total UMIs/detected genes/mitochondrial counts
         cells="results/GSE174367/02.1_mito_check/{sample}.cells.tsv",
+        #for each sample --> count totals/per nucleus count stats
         summary="results/GSE174367/02.1_mito_check/{sample}.summary.tsv"
     params:
         mito_pattern="^MT-"
@@ -77,7 +79,7 @@ rule qc_mito_summary:
         "logs/GSE174367/02.1_mito_check/{sample}.log"
     shell:
         """
-        mkdir -p logs/GSE174367/02.1_mito_check
+        mkdir -p logs/GSE174367/02.1_mito_check results/GSE174367/02.1_mito_check
         Rscript {input.script:q} {input.rds:q} {output.cells:q} {output.summary:q} {params.mito_pattern:q} > {log:q} 2>&1
         """
 
