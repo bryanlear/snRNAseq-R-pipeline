@@ -1,10 +1,5 @@
-`commandArgs()` = (with `trailingOnly = FALSE` as default) returns all arguments passed to the R process, including path to R executable itself and standard R invocation flags (e.g., `--no-echo`, `--vanilla`, `-f`):
-    - `--no-echo`: Disables echoing of input commands to stdout
-    - `--vanilla`: Forces R to start a clean, lightweight session with default setting
 
-With `trailingOnly = TRUE`, it returns only the custom arguments supplied after the script name when running via `Rscript` or `R --slave -f`.
-
-0. **TEST: Handle Human Alzheimer's Data + Metada**
+1. **TEST: Handle Human Alzheimer's Data + Metada**
 
 ```
 Rscript scripts/00_combined_h5.R \
@@ -49,7 +44,6 @@ Rscript scripts/02_qc.R \
   3 
 ```
 
-
 ---
 
 ***QC For Human data:***
@@ -57,7 +51,10 @@ Rscript scripts/02_qc.R \
 ```
 snakemake human_all --cores 1 --printshellcmds
 ````
-
-
 ---
 
+3. **Mitochondrial contamination percentages summary**
+
+```
+snakemake human_mito_check_all --printshellcmds --cores 1
+```

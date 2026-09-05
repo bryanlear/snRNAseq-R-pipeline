@@ -28,7 +28,7 @@ rule import_human:
         excluded="results/GSE174367/01_seurat/excluded_barcodes.tsv"
     params:
         output_dir="results/GSE174367/01_seurat",
-        unmatched_policy="exclude"
+        unmatched_policy=config.get("unmatched_policy", "exclude")
     threads: 1
     log:
         "logs/GSE174367/00_combined_h5.log"
@@ -55,6 +55,37 @@ rule qc_human:
         mkdir -p logs/GSE174367/02_qc
         Rscript {input.script:q} {input.rds:q} {output.rds:q} {output.summary:q} {params.nmads} > {log:q} 2>&1
         """
+        
+#################### To call at any moment #################
+
+rule human_mito_check_all:
+    input:
+        expand("results/GSE174367/02.1_mito_check/{sample}.cells.tsv", sample=HUMAN_SAMPLES),
+        expand("results/GSE174367/02.1_mito_check/{sample}.summary.tsv", sample=HUMAN_SAMPLES)
+
+rule qc_mito_summary:
+    input:
+        rds="results/GSE174367/02_qc/{sample}.rds",
+        script="scripts/02.1_qc.R"
+    output:
+        cells="results/GSE174367/02.1_mito_check/{sample}.cells.tsv",
+        summary="results/GSE174367/02.1_mito_check/{sample}.summary.tsv"
+    params:
+        mito_pattern="^MT-"
+    threads: 1
+    log:
+        "logs/GSE174367/02.1_mito_check/{sample}.log"
+    shell:
+        """
+        mkdir -p logs/GSE174367/02.1_mito_check
+        Rscript {input.script:q} {input.rds:q} {output.cells:q} {output.summary:q} {params.mito_pattern:q} > {log:q} 2>&1
+        """
+
+##################################################################################################################
+##################################################################################################################
+##################################################################################################################
+##################################################################################################################
+
 
 #########################################################
 ############### Non-human primate data ##################
