@@ -89,7 +89,8 @@ rule human_qc_plots_all:
     input:
         expand("results/GSE174367/02.2_qc_plots/{sample}.umi_mito.png", sample=HUMAN_SAMPLES),
         expand("results/GSE174367/02.2_qc_plots/{sample}.gene_mito.png", sample=HUMAN_SAMPLES),
-        expand("results/GSE174367/02.2_qc_plots/{sample}.umi_gene_mito.png", sample=HUMAN_SAMPLES)
+        expand("results/GSE174367/02.2_qc_plots/{sample}.umi_gene_mito.png", sample=HUMAN_SAMPLES),
+        expand("results/GSE174367/02.2_qc_plots/{sample}.flagged.tsv", sample=HUMAN_SAMPLES)
 
 rule qc_umi_gene_mito_plot:
     input:
@@ -98,15 +99,49 @@ rule qc_umi_gene_mito_plot:
     output:
         umi_mito="results/GSE174367/02.2_qc_plots/{sample}.umi_mito.png",
         gene_mito="results/GSE174367/02.2_qc_plots/{sample}.gene_mito.png",
-        umi_gene_mito="results/GSE174367/02.2_qc_plots/{sample}.umi_gene_mito.png"
+        umi_gene_mito="results/GSE174367/02.2_qc_plots/{sample}.umi_gene_mito.png",
+        flagged="results/GSE174367/02.2_qc_plots/{sample}.flagged.tsv"
+    params:
+        nmads=config.get("mito_plot_nmads", 3),
+        min_diff=config.get("mito_plot_min_diff", 0.5)
     threads: 1
     log:
         "logs/GSE174367/02.2_qc_plots/{sample}.log"
     shell:
         """
         mkdir -p logs/GSE174367/02.2_qc_plots
-        Rscript {input.script:q} {input.cells:q} {output.umi_mito:q} {output.gene_mito:q} {output.umi_gene_mito:q} > {log:q} 2>&1
+        Rscript {input.script:q} {input.cells:q} {output.umi_mito:q} {output.gene_mito:q} {output.umi_gene_mito:q} {output.flagged:q} {params.nmads:q} {params.min_diff:q} > {log:q} 2>&1
         """
+        
+rule mit_decontamination_all:
+    input:
+        expand("results/GSE174367/03_qc_mit/{sample}.rds", sample=HUMAN_SAMPLES),
+        expand("results/GSE174367/03_qc_mit/{sample}.summary.tsv", sample=HUMAN_SAMPLES)
+
+rule mit_decontamination:
+    input:
+        rds="results/GSE174367/02_qc/{sample}.rds",
+        script="scripts/03_mit_contamination.R"
+    output:
+        rds="results/GSE174367/03_qc_mit/{sample}.rds",
+        summary="results/GSE174367/03_qc_mit/{sample}.summary.tsv"
+    params:
+        method="mad",
+        mito_pattern="^MT-",
+        nmads=3,
+        min_diff=0.5
+    threads: 1
+    log:
+        "logs/GSE174367/03_qc_mit/{sample}.log"
+    shell:
+        """
+        mkdir -p logs/GSE174367/03_qc_mit
+        Rscript {input.script:q} {input.rds:q} {output.rds:q} {output.summary:q} {params.method:q} {params.mito_pattern:q} {params.nmads:q} {params.min_diff:q} > {log:q} 2>&1
+        """
+        
+        
+        
+
 
 ##################################################################################################################
 ##################################################################################################################

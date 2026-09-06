@@ -64,3 +64,21 @@ snakemake human_mito_check_all --printshellcmds --cores 1
 ```
 snakemake human_qc_plots_all --cores 1 --printshellcmds
 ```
+
+-  Also added to the plots an upper threshold = median_mt + 3 (multiplier) * MAD_mt and nuclei above is flagged. 
+-  No nuclei is removed, only for visualization and inspection of the nuclei with relatively high mitochondrial RNA.
+
+For context:
+```median_mt <- median(percent_mt)
+
+distances <- abs(percent_mt - median_mt)
+
+mad_mt <- 1.4826 * median(distances)  # same as R's mad(percent_mt)
+
+upper_threshold <- median_mt + 3 * mad_mt
+```
+5. **Apply automated mitochondrial decontamination thresholds**
+
+```
+snakemake mit_decontamination_all --printshellcmds --cores 1
+```

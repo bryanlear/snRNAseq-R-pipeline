@@ -8,6 +8,7 @@ if (!length(args) %in% c(6L, 7L)){stop("Usage: Rscript scripts/03_mit_contaminat
 input_rds <- args[[1]]
 output_rds <- args[[2]]
 summary_tsv <- args[[3]]
+
 method <- args[[4]]
 mito_pattern <- args[[5]] #-^MT
 value <- suppressWarnings(as.numeric(args[[6]]))
