@@ -82,3 +82,9 @@ upper_threshold <- median_mt + 3 * mad_mt
 ```
 snakemake mit_decontamination_all --printshellcmds --cores 1
 ```
+
+6. **Append Cell-Cycle Scoring Medata to Object**
+
+```
+snakemake cell_cycle_scoring_all --dry-run --printshellcmds --cores 1
+```

@@ -6,3 +6,4 @@ brain_data
 *.gz
 logs/
 .snakemake/
+*.csv

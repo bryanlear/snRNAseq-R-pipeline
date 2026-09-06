@@ -53,7 +53,7 @@ rule qc_human:
     shell:
         """
         mkdir -p logs/GSE174367/02_qc
-        Rscript {input.script:q} {input.rds:q} {output.rds:q} {output.summary:q} {params.nmads} > {log:q} 2>&1
+        Rscript {input.script:q} {input.rds:q} {output.rds:q} {output.summary:q} {params.nmads:q} > {log:q} 2>&1
         """
         
 #################### check and create data summary #################
@@ -84,7 +84,9 @@ rule qc_mito_summary:
         Rscript {input.script:q} {input.rds:q} {output.cells:q} {output.summary:q} {params.mito_pattern:q} > {log:q} 2>&1
         """
 
-#PLOTS for quality control decisions (they can be run independently at any point)
+####################### QC Plots ###############################
+# for quality control decisions (they can be run independently at any point)
+
 rule human_qc_plots_all:
     input:
         expand("results/GSE174367/02.2_qc_plots/{sample}.umi_mito.png", sample=HUMAN_SAMPLES),
@@ -112,7 +114,10 @@ rule qc_umi_gene_mito_plot:
         mkdir -p logs/GSE174367/02.2_qc_plots
         Rscript {input.script:q} {input.cells:q} {output.umi_mito:q} {output.gene_mito:q} {output.umi_gene_mito:q} {output.flagged:q} {params.nmads:q} {params.min_diff:q} > {log:q} 2>&1
         """
-        
+
+####################### Mito Decontamination ###############################
+# Using median_mt + max(3 * MAD_mt, 0.5)
+
 rule mit_decontamination_all:
     input:
         expand("results/GSE174367/03_qc_mit/{sample}.rds", sample=HUMAN_SAMPLES),
@@ -137,6 +142,31 @@ rule mit_decontamination:
         """
         mkdir -p logs/GSE174367/03_qc_mit
         Rscript {input.script:q} {input.rds:q} {output.rds:q} {output.summary:q} {params.method:q} {params.mito_pattern:q} {params.nmads:q} {params.min_diff:q} > {log:q} 2>&1
+        """
+        
+####################### Cell-Cycle Scoring ###############################
+# Scores are calculated, appended to original object, and saved. No regression is applied.
+
+rule cell_cycle_scoring_all:
+    input:
+        expand("results/GSE174367/04_cell_cycle/{sample}.rds", sample=HUMAN_SAMPLES),
+        expand("results/GSE174367/04_cell_cycle/{sample}.summary.tsv", sample=HUMAN_SAMPLES)
+
+rule cell_cycle_scoring:
+    input:
+        rds="results/GSE174367/03_qc_mit/{sample}.rds",
+        script="scripts/04_cell_cycle_scoring.R"
+    output:
+        rds="results/GSE174367/04_cell_cycle/{sample}.rds",
+        summary="results/GSE174367/04_cell_cycle/{sample}.summary.tsv"
+    threads:
+        1
+    log:
+        "logs/GSE174367/04_cell_cycle/{sample}.log"
+    shell:
+        """
+        mkdir -p logs/GSE174367/04_cell_cycle
+        Rscript {input.script:q} {input.rds:q} {output.rds:q} {output.summary:q} > {log:q} 2>&1
         """
         
         
