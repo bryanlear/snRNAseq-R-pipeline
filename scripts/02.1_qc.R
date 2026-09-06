@@ -53,13 +53,22 @@ percent_mt <- 100 * mitochondrial_umis / total_umis
 
 if (anyNA(percent_mt) || any(!is.finite(percent_mt)) || any(percent_mt < 0 | percent_mt > 100)) {stop("Mitochondrial percentages must be finite values between 0 and 100.", call. = FALSE)}
 
+# Use the first available cell-type column in this order. Do not infer labels from clusters.
+cell_type_columns <- intersect(c("Cell.Type", "cell_type", "celltype", "cell.type", "CellType"), names(metadata))
+cell_type_column <- if (length(cell_type_columns) > 0L) cell_type_columns[[1]] else NA_character_
+cell_type <- if (!is.na(cell_type_column)) as.character(metadata[[cell_type_column]]) else rep(NA_character_, ncol(object))
+cell_type[!is.na(cell_type) & !nzchar(trimws(cell_type))] <- NA_character_
+
+if (length(cell_type_columns) > 1L) {message("Multiple cell-type columns found; using ", cell_type_column, " for cell_type.")}
+
 report_columns <- c(required, intersect(c("Batch", "Cell.Type", "cluster"), names(metadata)))
-cell_report <- data.frame(Barcode = colnames(object), metadata[, report_columns, drop = FALSE], mitochondrial_umis = unname(mitochondrial_umis), detected_mitochondrial_genes = unname(detected_mitochondrial_genes), percent.mt = unname(percent_mt), check.names = FALSE)
+cell_report <- data.frame(Barcode = colnames(object), metadata[, report_columns, drop = FALSE], cell_type = cell_type, mitochondrial_umis = unname(mitochondrial_umis), detected_mitochondrial_genes = unname(detected_mitochondrial_genes), percent.mt = unname(percent_mt), check.names = FALSE)
 
 q <- quantile(percent_mt, probs = c(0, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 1), names = FALSE)
 
 summary <- data.frame(
   sample_id = sample_id, condition = condition, nuclei = ncol(object), mito_pattern = mito_pattern, mitochondrial_features = length(mito_genes),
+  cell_type_column = cell_type_column, nuclei_with_cell_type = sum(!is.na(cell_type)), nuclei_without_cell_type = sum(is.na(cell_type)),
   total_umis = sum(total_umis), total_mitochondrial_umis = sum(mitochondrial_umis), genes_detected_in_sample = sum(Matrix::rowSums(counts > 0) > 0), mitochondrial_genes_detected_in_sample = sum(Matrix::rowSums(mito_counts > 0) > 0),
   min_umis_per_nucleus = min(total_umis), median_umis_per_nucleus = median(total_umis), mean_umis_per_nucleus = mean(total_umis), max_umis_per_nucleus = max(total_umis),
   min_genes_per_nucleus = min(detected_genes), median_genes_per_nucleus = median(detected_genes), mean_genes_per_nucleus = mean(detected_genes), max_genes_per_nucleus = max(detected_genes),

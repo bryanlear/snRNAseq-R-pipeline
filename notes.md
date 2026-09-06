@@ -58,3 +58,9 @@ snakemake human_all --cores 1 --printshellcmds
 ```
 snakemake human_mito_check_all --printshellcmds --cores 1
 ```
+
+4. **Quality Control Plots**
+
+```
+snakemake human_qc_plots_all --cores 1 --printshellcmds
+```

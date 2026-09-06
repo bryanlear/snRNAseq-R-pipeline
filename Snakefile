@@ -56,7 +56,8 @@ rule qc_human:
         Rscript {input.script:q} {input.rds:q} {output.rds:q} {output.summary:q} {params.nmads} > {log:q} 2>&1
         """
         
-#################### To call at any moment #################
+#################### check and create data summary #################
+# can be call indepedently
 
 rule human_mito_check_all:
     input:
@@ -81,6 +82,30 @@ rule qc_mito_summary:
         """
         mkdir -p logs/GSE174367/02.1_mito_check results/GSE174367/02.1_mito_check
         Rscript {input.script:q} {input.rds:q} {output.cells:q} {output.summary:q} {params.mito_pattern:q} > {log:q} 2>&1
+        """
+
+#PLOTS for quality control decisions (they can be run independently at any point)
+rule human_qc_plots_all:
+    input:
+        expand("results/GSE174367/02.2_qc_plots/{sample}.umi_mito.png", sample=HUMAN_SAMPLES),
+        expand("results/GSE174367/02.2_qc_plots/{sample}.gene_mito.png", sample=HUMAN_SAMPLES),
+        expand("results/GSE174367/02.2_qc_plots/{sample}.umi_gene_mito.png", sample=HUMAN_SAMPLES)
+
+rule qc_umi_gene_mito_plot:
+    input:
+        cells="results/GSE174367/02.1_mito_check/{sample}.cells.tsv",
+        script="scripts/02.2_umi_gene_mito_plot.R"
+    output:
+        umi_mito="results/GSE174367/02.2_qc_plots/{sample}.umi_mito.png",
+        gene_mito="results/GSE174367/02.2_qc_plots/{sample}.gene_mito.png",
+        umi_gene_mito="results/GSE174367/02.2_qc_plots/{sample}.umi_gene_mito.png"
+    threads: 1
+    log:
+        "logs/GSE174367/02.2_qc_plots/{sample}.log"
+    shell:
+        """
+        mkdir -p logs/GSE174367/02.2_qc_plots
+        Rscript {input.script:q} {input.cells:q} {output.umi_mito:q} {output.gene_mito:q} {output.umi_gene_mito:q} > {log:q} 2>&1
         """
 
 ##################################################################################################################
