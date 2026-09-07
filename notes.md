@@ -88,3 +88,47 @@ snakemake mit_decontamination_all --printshellcmds --cores 1
 ```
 snakemake cell_cycle_scoring_all --dry-run --printshellcmds --cores 1
 ```
+
+7. **Doublets**:
+
+First PCA and investigate 8 to 15 PCs:
+
+e.g., Sample 22
+```
+Rscript scripts/05_doublets.R \
+    results/GSE174367/04_cell_cycle/Sample-22.rds \
+    results/GSE174367/05_doublets/Sample-22.rds \
+    results/GSE174367/05_doublets/Sample-22.summary.tsv
+
+---
+
+PC_ 8 
+Positive:  RALYL, SH3GL2, UNC13C, GAP43, AC073365.1 
+Negative:  GALNTL6, CALB2, TAC3, BTBD11, PWRN1 
+PC_ 9 
+Positive:  PTPRM, NEAT1, MYRIP, AFF3, RASGRF1 
+Negative:  ADGRL3, AL445250.1, CTNND2, KCNAB1, SVEP1 
+PC_ 10 
+Positive:  TLL1, SPHKAP, RIT2, EBF1, ZNF385D 
+Negative:  SYT7, GYG2P1, TMEM196, MLIP, AC073365.1 
+PC_ 11 
+Positive:  RAB3C, SATB1-AS1, TSHZ3, ST6GALNAC5, BCL11B 
+Negative:  PPFIA4, LRRC3B, EGFEM1P, GPR158, LINGO2 
+PC_ 12 
+Positive:  CCDC26, IRF8, MINOS1, KCNIP1, OR52K3P 
+Negative:  CD163, IQGAP2, F13A1, SLC16A10, MRC1 
+PC_ 13 
+Positive:  SGCZ, PTPRT, HIF1A-AS2, SYTL3, GPNMB 
+Negative:  VSIG4, STAB1, CD163, MRC1, ANKRD55 
+PC_ 14 
+Positive:  ANKRD55, EGFEM1P, SPTLC3, DACH2, BEST3 
+Negative:  SGCZ, VSIG4, GPNMB, NCK2, STAB1 
+PC_ 15 
+Positive:  LYPD6, RERG, NPNT, CHI3L1, PPFIA4 
+Negative:  HMGCLL1, ABI3BP, ANGPT1, FRMPD2, PRR16 
+```
+[Source DoubletFinder](https://github.com/chris-mcginnis-ucsf/DoubletFinder#doubletfinder-overview)
+
+Note: Positive and negative loadings indicate direction along PC and NOT differential expression. 
+
+* **pK**: Defines PC neighborhood size/radius used to compute proportion of artificial nearest neighbors (**pANN**) for each cell. It is the radius as a fracation of the total merged real and artificial dataset. Since optimal performance depends of dataset density and cell-type composition, pK, is thus not assigned a default value. Use `paramSweep` and `find.pK` to find peak in mean variance normalized bimodality coefficient (**BCmvn**).

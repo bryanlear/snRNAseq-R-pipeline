@@ -7,3 +7,4 @@ brain_data
 logs/
 .snakemake/
 *.csv
+*.safetensors

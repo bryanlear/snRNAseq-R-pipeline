@@ -3,7 +3,7 @@ args <- commandArgs(trailingOnly = TRUE)
 if (!length(args) %in% c(6L, 7L)){stop("Usage: Rscript scripts/03_mit_contamination.R <input.rds> <output.rds> <summary.tsv> <fixed|mad> <gene_pattern> <cutoff_percent|nmads> [min_diff]", call. = FALSE)}
 
 #fixed '^MT-' 5 percent
-#mad '^MT-' 3 0.5 (3 * mad_mt, 0.5) 
+#mad '^MT-' 3 0.5 (median(percent_mt) + max(nmads=3 * mad(percent_mt), min_diff=0.5))
 
 input_rds <- args[[1]]
 output_rds <- args[[2]]
