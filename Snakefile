@@ -168,10 +168,36 @@ rule cell_cycle_scoring:
         mkdir -p logs/GSE174367/04_cell_cycle
         Rscript {input.script:q} {input.rds:q} {output.rds:q} {output.summary:q} > {log:q} 2>&1
         """
-        
-        
-        
 
+####################### DoubletFinder ###############################
+
+rule doublet_finder_all:
+    input:
+        expand("results/GSE174367/05_doublets/{sample}.rds", sample=HUMAN_SAMPLES),
+        expand("results/GSE174367/05_doublets/{sample}.expected_doublets.tsv", sample=HUMAN_SAMPLES),
+        expand("results/GSE174367/05_doublets/{sample}.pK_sweep.tsv", sample=HUMAN_SAMPLES),
+        expand("results/GSE174367/05_doublets/{sample}.pK_selected.tsv", sample=HUMAN_SAMPLES),
+        expand("results/GSE174367/05_doublets/{sample}.pK_sweep.png", sample=HUMAN_SAMPLES)
+
+rule doublet_finder:
+    input:
+        rds="results/GSE174367/04_cell_cycle/{sample}.rds",
+        h5=HUMAN_H5,
+        script="scripts/05_doublets.R"
+    output:
+        rds="results/GSE174367/05_doublets/{sample}.rds",
+        summary="results/GSE174367/05_doublets/{sample}.expected_doublets.tsv",
+        pk_sweep="results/GSE174367/05_doublets/{sample}.pK_sweep.tsv",
+        pk_selected="results/GSE174367/05_doublets/{sample}.pK_selected.tsv",
+        pk_plot="results/GSE174367/05_doublets/{sample}.pK_sweep.png"
+    threads: 3
+    log:
+        "logs/GSE174367/05_doublets/{sample}.log"
+    shell:
+        """
+        mkdir -p logs/GSE174367/05_doublets results/GSE174367/05_doublets
+        Rscript {input.script:q} {input.rds:q} {output.rds:q} {output.summary:q} {input.h5:q} > {log:q} 2>&1
+        """
 
 ##################################################################################################################
 ##################################################################################################################
