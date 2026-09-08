@@ -1,3 +1,4 @@
+# PRE-PROCESSING:
 
 1. **TEST: Handle Human Alzheimer's Data + Metada**
 
@@ -125,3 +126,25 @@ $$P(X_{ij} \mid \psi_i, \phi_{k[i], j}, \gamma_j) = (1 - \psi_i)\phi_{k[i], j} +
 ```
 snakemake ambient_rna_all --cores 3 --printshellcmds --allowed-rules ambient_rna ambient_rna_all
 ```
+
+**NOTE regarding ambient RNA**: I checked correction using UMI changes and whatnot. They show the amount of correction but do NOT establish biological accuracy. **For a future research project**: Compare several cell-type marker genes before and after correction (final saved `.rds` since object contains both columns). Must check that expected expression remains in the appropriate cell types and unexpected decreases somewhere else. Must review nuclei/cell with large corrections and check cell groups used by the tool (here `DecontX`). Any filtering step must have justification. 
+
+---
+
+# GENEFORMER v2 (104 * 10^6 Human Transcriptomes)
+
+Chen et al,. 2026 [Nature Computational Science](https://www.nature.com/articles/s43588-026-00972-4). Article can be found [here](literature/chen_et_al_2026.pdf).
+
+Counts for each nucleus $\rightarrow$ Gene IDs and metadata $\rightarrow$ Tokenizer: calculate scores and rank genes $\rightarrow$ Geneformer: process ranked gene tokens $\rightarrow$ Embeddings $\rightarrow$ Analysis
+
+Tokenizer calculates a score for each detected gene:
+
+$$s_{g,c}=\frac{10,000x_{g,c}}{N_c m_g}$$
+
+- $x_{g,c}$ is count for gene $g$ in nucleus $c$
+- $N_c$ is total count in $c$
+- $m_g$ is reference median for $g$
+
+Tokenizer sorts genes from highest score to lowest. Reference medians come from pretraining corpus.
+
+## Data Preparation:
