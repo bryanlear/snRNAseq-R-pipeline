@@ -198,6 +198,28 @@ rule doublet_finder:
         mkdir -p logs/GSE174367/05_doublets results/GSE174367/05_doublets
         Rscript {input.script:q} {input.rds:q} {output.rds:q} {output.summary:q} {input.h5:q} > {log:q} 2>&1
         """
+        
+        
+####################### Ambient RNA ###############################
+        
+rule ambient_rna_all:
+    input:
+        expand("results/GSE174367/06_ambient_rna/{sample}.rds", sample=HUMAN_SAMPLES)
+
+rule ambient_rna:
+    input:
+        rds="results/GSE174367/05_doublets/{sample}.rds",
+        script="scripts/06_ambient_rna.R"
+    output:
+        rds="results/GSE174367/06_ambient_rna/{sample}.rds"
+    threads: 1
+    log:
+        "logs/GSE174367/06_ambient_rna/{sample}.log"
+    shell:
+        """
+        mkdir -p logs/GSE174367/06_ambient_rna
+        Rscript {input.script:q} {input.rds:q} {output.rds:q} > {log:q} 2>&1
+        """
 
 ##################################################################################################################
 ##################################################################################################################

@@ -739,6 +739,12 @@ saveRDS(brain_sct,file = "brain_sct.rds")
 ### brain_sct 
 ```
 
+
+
+
+
+---
+
 ### PCA, Harmony, UMAP
 
 ```{r LOAD-brain_sct}
@@ -789,6 +795,11 @@ DimPlot(brain_merged, reduction = "pca", group.by = "condition")
 ```{r save brain_merged}
 saveRDS(brain_merged, file = "brain_merged.rds")
 ```
+
+
+
+
+
 ------------------------------------------------------------------------
 
 # Cell-Typing Reference-Based:

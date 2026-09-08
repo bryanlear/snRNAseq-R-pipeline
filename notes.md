@@ -108,10 +108,20 @@ Note: Positive and negative loadings indicate direction along PC and NOT differe
 
 * **pK**: Defines PC neighborhood size/radius used to compute proportion of artificial nearest neighbors (**pANN**) for each cell. It is the radius as a fracation of the total merged real and artificial dataset. Since optimal performance depends of dataset density and cell-type composition, pK, is thus not assigned a default value. Use `paramSweep` and `find.pK` to find peak in mean variance normalized bimodality coefficient (**BCmvn**).
 
+```
+snakemake doublet_finder_all --cores 3 --printshellcmds --allowed-rules doublet_finder doublet_finder_all
+```
 
-​```
-snakemake doublet_finder_all \
-  --allowed-rules doublet_finder doublet_finder_all \ 
-  --printshellcmds \
-  --cores 3
+8. **Ambient RNA**:
+
+**DecontX**: Bayesian hirarchical method which estimates and remove ambient RNA contaimination (a.k.a *soup*). Ambient transcripts which are released from lyzed cells during tissue dissociation, are captured inside the droplets along the cells/nuclei native mRNA. DecontX decouples those signals withouth requiring empty-droplet information. 
+
+DecontX assumes that ambient RNA pool (soup) consists of a uniform mizture of transcripts leaked from all lyzed cells in the suspension. 
+
+$$P(X_{ij} \mid \psi_i, \phi_{k[i], j}, \gamma_j) = (1 - \psi_i)\phi_{k[i], j} + \psi_i \gamma_j$$
+
+ where $\gamma_j$ is global background freq. of gene $j$ in the ambient RNA pool.
+
+```
+snakemake ambient_rna_all --cores 3 --printshellcmds --allowed-rules ambient_rna ambient_rna_all
 ```
