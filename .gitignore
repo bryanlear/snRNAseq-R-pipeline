@@ -9,3 +9,4 @@ logs/
 *.csv
 *.safetensors
 explore_ambient_rna.R
+06_compare_ambient_rna.R

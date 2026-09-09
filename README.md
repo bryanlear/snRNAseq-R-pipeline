@@ -5,6 +5,17 @@ This DAG shows the pipeline for the Alzheimer disease (AD) and control (Morabito
 1 `.rds` = 1 sample
 
 ```mermaid
+---
+config:
+  themeVariables:
+    fontSize: 12px
+  flowchart:
+    nodeSpacing: 20
+    rankSpacing: 20
+    padding: 8
+    diagramPadding: 8
+---
+
 flowchart TB
     INPUT["AD and control data<br/>H5 count matrix + CSV metadata"]
     IMPORT["00_combined_h5.R<br/>Match barcodes and split by sample<br/>unmatched_policy = exclude"]
@@ -46,4 +57,3 @@ flowchart TB
     class INPUT,IMPORT_OUT,QC_OUT,MITO_OUT,CYCLE_OUT,DOUBLETS_OUT,FINAL,H5 data;
     class QC_STATS,STATS_OUT,QC_PLOTS,PLOTS_OUT report;
 ```
-

@@ -129,6 +129,12 @@ snakemake ambient_rna_all --cores 3 --printshellcmds --allowed-rules ambient_rna
 
 **NOTE regarding ambient RNA**: I checked correction using UMI changes and whatnot. They show the amount of correction but do NOT establish biological accuracy. **For a future research project**: Compare several cell-type marker genes before and after correction (final saved `.rds` since object contains both columns). Must check that expected expression remains in the appropriate cell types and unexpected decreases somewhere else. Must review nuclei/cell with large corrections and check cell groups used by the tool (here `DecontX`). Any filtering step must have justification. 
 
+**UMAP**:
+
+
+
+
+
 ---
 
 # GENEFORMER v2 (104 * 10^6 Human Transcriptomes)
@@ -148,3 +154,14 @@ $$s_{g,c}=\frac{10,000x_{g,c}}{N_c m_g}$$
 Tokenizer sorts genes from highest score to lowest. Reference medians come from pretraining corpus.
 
 ## Data Preparation:
+
+1. Use DecontX counts $\rightarrow$ compare corrected vs. non-corrected which are both in the .rds
+2. Restore Ensembl IDs (from original .H5)
+3. Export to `.h5ad` $\rightarrow$ `sample_id`, `condition`, `batch`, `cell.type`
+4. Tokenize $\rightarrow$ feed counts with NO log tansform, scaling, and whatnot. Tokenizer takes care of that.
+
+### 1.
+
+**Pericyte cells**: Mural cells embedded within the vascular basement membrane that wrap around endothelial cells lining capillaries and post capillary venules. They have roles in vascular stability/integrity, BBB regulation, microvascular blood flow, angiogenesis.
+
+`PER.END` = Pericytes and Endothelial cells annotation in the `.rsd` files.
