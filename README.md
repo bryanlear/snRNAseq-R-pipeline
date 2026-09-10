@@ -57,3 +57,9 @@ flowchart TB
     class INPUT,IMPORT_OUT,QC_OUT,MITO_OUT,CYCLE_OUT,DOUBLETS_OUT,FINAL,H5 data;
     class QC_STATS,STATS_OUT,QC_PLOTS,PLOTS_OUT report;
 ```
+$\rightarrow$ SCTransform $\rightarrow$ PCAs $\rightarrow$ UMAP (before batch correction) $\rightarrow$ Inspection $\rightarrow$ Harmony $\rightarrow$ UMAP:
+
+![harmony_corrected](results/GSE174367/umap/umap_harmony_cell_types.png)
+
+
+
