@@ -61,5 +61,6 @@ $\rightarrow$ SCTransform $\rightarrow$ PCAs $\rightarrow$ UMAP (before batch co
 
 ![harmony_corrected](results/GSE174367/umap/umap_harmony_cell_types.png)
 
+### Stack Plot - Cell Type % vs. Sample
 
-
+![histogramp_celltype](results/GSE174367/downstream_analysis/cell_type_composition.png)
