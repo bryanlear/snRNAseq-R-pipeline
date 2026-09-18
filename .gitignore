@@ -8,6 +8,7 @@ logs/
 .snakemake/
 *.csv
 *.safetensors
+*.h5ad
 explore_ambient_rna.R
 06_compare_ambient_rna.R
 explore_rsds.R
