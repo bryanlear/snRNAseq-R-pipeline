@@ -166,3 +166,31 @@ Tokenizer sorts genes from highest score to lowest. Reference medians come from 
 
 `PER.END` = Pericytes and Endothelial cells annotation in the `.rsd` files.
 
+### 2. Matche ensembl ids from original .csv to processed .rds files
+
+### 3. Export .rsd data to .h5ad format for Geneformer 
+
+| Check | Sample-96 RNA | Sample-19 decontX |
+|---|---:|---:|
+| Cells | 3,866 | 2,412 |
+| Genes | 58,721 | 58,721 |
+| Sparse matrix | CSR | CSR |
+| Raw integer counts | Pass | Pass |
+| Nonnegative counts | Pass | Pass |
+| `obs["n_counts"]` present | Pass | Pass |
+| `n_counts` equals matrix sums | Pass | Pass |
+| `var["ensembl_id"]` present | Pass | Pass |
+| Valid `ENSG` format | 58,721/58,721 | 58,721/58,721 |
+| Missing Ensembl IDs | 0 | 0 |
+
+---
+
+## To Do
+
+- Tokenize and create embeddings
+- Containerize Snakemake pipeline using Docker
+- Analyze embeddings with low dimensionality techniques --> Check pattern AD vs. Control
+- If any patterns are observed then do perturbation analysis with Control embeddings to recreate pattern observed in AD
+
+
+
