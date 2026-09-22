@@ -183,14 +183,13 @@ Tokenizer sorts genes from highest score to lowest. Reference medians come from 
 | Valid `ENSG` format | 58,721/58,721 | 58,721/58,721 |
 | Missing Ensembl IDs | 0 | 0 |
 
+### 4. Tokenize nuclei and extract embeddings
+
 ---
 
 ## To Do
 
-- Tokenize and create embeddings
+- Tokenize and create embeddings ✅
 - Containerize Snakemake pipeline using Docker
 - Analyze embeddings with low dimensionality techniques --> Check pattern AD vs. Control
 - If any patterns are observed then do perturbation analysis with Control embeddings to recreate pattern observed in AD
-
-
-
