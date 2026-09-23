@@ -185,6 +185,8 @@ Tokenizer sorts genes from highest score to lowest. Reference medians come from 
 
 ### 4. Tokenize nuclei and extract embeddings
 
+12 attentions heads with 64 dimenstions per head = 12*64=768
+
 ---
 
 ## To Do
