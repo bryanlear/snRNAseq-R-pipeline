@@ -57,6 +57,11 @@ flowchart TB
     class INPUT,IMPORT_OUT,QC_OUT,MITO_OUT,CYCLE_OUT,DOUBLETS_OUT,FINAL,H5 data;
     class QC_STATS,STATS_OUT,QC_PLOTS,PLOTS_OUT report;
 ```
+
+---
+
+## STARDARD DOWNSTREAM ANALYSIS 
+
 $\rightarrow$ SCTransform $\rightarrow$ PCAs $\rightarrow$ UMAP (before batch correction) $\rightarrow$ Inspection $\rightarrow$ Harmony $\rightarrow$ UMAP:
 
 ![harmony_corrected](results/GSE174367/umap/umap_harmony_cell_types.png)
@@ -64,3 +69,13 @@ $\rightarrow$ SCTransform $\rightarrow$ PCAs $\rightarrow$ UMAP (before batch co
 ### Stack Plot - Cell Type % vs. Sample
 
 ![histogramp_celltype](results/GSE174367/downstream_analysis/cell_type_composition.png)
+
+`in progress...`
+
+## GENEFORMER DOWNSTREAM ANALYSIS
+
+![umap-cosine-k30](results/geneformer_downstream_analysis/umap_output/umap_cosine_k30_condition_cell_type.png)
+
+![umap-condition-cosine-k30](results/geneformer_downstream_analysis/umap_output/umap_euclidean_k30_cell_type.png)
+
+`in progress...`

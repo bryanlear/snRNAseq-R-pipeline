@@ -195,3 +195,10 @@ Tokenizer sorts genes from highest score to lowest. Reference medians come from 
 - Containerize Snakemake pipeline using Docker
 - Analyze embeddings with low dimensionality techniques --> Check pattern AD vs. Control
 - If any patterns are observed then do perturbation analysis with Control embeddings to recreate pattern observed in AD
+
+---
+
+Run kNN:
+```
+Rscript scripts/geneformer_downstream_analysis/knn.R geneformer_output/embeddings/gse174367_rna_v2_cell_embeddings.csv results/geneformer_downstream_analysis/knn_output 1000
+```
